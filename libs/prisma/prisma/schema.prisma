@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  SELLER
+  ADMIN
+}
+
+enum ProductStatus {
+  ACTIVE
+  DRAFT
+  DELETED
+}
+
+model User {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  email         String   @unique
+  password      String?
+  avatar        String?
+  emailVerified Boolean  @default(false)
+  role          Role     @default(USER)
+  following     String[]
+  fcmTokens     String[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  reviews       Review[]
+
+}
+
+model Seller {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  email         String   @unique
+  password      String
+  phoneNumber   String
+  country       String
+  stripeId      String?
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  shop          Shop?
+}
+
+model Shop {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  bio          String?
+  category     String
+  avatar       String?
+  coverBanner  String?
+  address      String
+  openingHours String?
+  website      String?
+  socialLinks  Json?
+  ratings      Float     @default(0)
+  isApproved   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sellerId     String    @unique @db.ObjectId
+  seller       Seller    @relation(fields: [sellerId], references: [id])
+
+  products     Product[]
+  reviews      Review[]
+}
+
+model Product {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  slug        String        @unique
+  description String
+  category    String
+  subCategory String?
+  tags        String[]
+  price       Float
+  salePrice   Float?
+  stock       Int           @default(0)
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  shopId      String        @db.ObjectId
+  shop        Shop          @relation(fields: [shopId], references: [id])
+
+  images      Image[]
+  reviews     Review[]
+
+  @@index([shopId])
+  @@index([category, status])
+}
+
+model Image {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  fileId    String
+  url       String
+
+  productId String?  @db.ObjectId
+  product   Product? @relation(fields: [productId], references: [id])
+}
+
+model Review {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  rating    Float
+  comment   String?
+  createdAt DateTime @default(now())
+
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+
+  productId String?  @db.ObjectId
+  product   Product? @relation(fields: [productId], references: [id])
+
+  shopId    String?  @db.ObjectId
+  shop      Shop?    @relation(fields: [shopId], references: [id])
+
+  @@index([productId])
+  @@index([shopId])
+}

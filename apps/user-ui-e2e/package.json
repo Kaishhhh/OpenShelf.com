@@ -1,0 +1,10 @@
+{
+  "name": "@openshelf/user-ui-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "implicitDependencies": [
+      "@openshelf/user-ui"
+    ]
+  }
+}

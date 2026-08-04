@@ -1,0 +1,35 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compileOnSave": false,
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/auth-service"
+    },
+    {
+      "path": "./apps/api-gateway"
+    },
+    {
+      "path": "./apps/user-ui-e2e"
+    },
+    {
+      "path": "./apps/user-ui"
+    },
+    {
+      "path": "./libs/prisma"
+    },
+    {
+      "path": "./libs/shared/types"
+    },
+    {
+      "path": "./libs/shared/errors"
+    },
+    {
+      "path": "./libs/shared/middleware"
+    },
+    {
+      "path": "./libs/shared/redis"
+    }
+  ],
+  "compilerOptions": {}
+}
