@@ -4,9 +4,9 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug @org/auth-service with Nx",
+      "name": "Debug @openshelf/auth-service with Nx",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["nx", "serve", "@org/auth-service"],
+      "runtimeArgs": ["nx", "serve", "@openshelf/auth-service"],
       "env": {
         "NODE_OPTIONS": "--inspect=9229"
       },
@@ -22,9 +22,9 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug @org/api-gateway with Nx",
+      "name": "Debug @openshelf/api-gateway with Nx",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["nx", "serve", "@org/api-gateway"],
+      "runtimeArgs": ["nx", "serve", "@openshelf/api-gateway"],
       "env": {
         "NODE_OPTIONS": "--inspect=9230"
       },

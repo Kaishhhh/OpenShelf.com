@@ -74,6 +74,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "axios": "^1.6.0",
     "express": "^5.1.0",
+    "ioredis": "^6.0.0",
     "next": "~16.1.6",
     "postcss": "^8.5.25",
     "react": "^19.0.0",

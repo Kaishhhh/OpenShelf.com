@@ -46,15 +46,15 @@
           "build"
         ],
         "options": {
-          "buildTarget": "@org/auth-service:build",
+          "buildTarget": "@openshelf/auth-service:build",
           "runBuildTargetDependencies": false
         },
         "configurations": {
           "development": {
-            "buildTarget": "@org/auth-service:build:development"
+            "buildTarget": "@openshelf/auth-service:build:development"
           },
           "production": {
-            "buildTarget": "@org/auth-service:build:production"
+            "buildTarget": "@openshelf/auth-service:build:production"
           }
         }
       },

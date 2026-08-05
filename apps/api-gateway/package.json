@@ -46,15 +46,15 @@
           "build"
         ],
         "options": {
-          "buildTarget": "@org/api-gateway:build",
+          "buildTarget": "@openshelf/api-gateway:build",
           "runBuildTargetDependencies": false
         },
         "configurations": {
           "development": {
-            "buildTarget": "@org/api-gateway:build:development"
+            "buildTarget": "@openshelf/api-gateway:build:development"
           },
           "production": {
-            "buildTarget": "@org/api-gateway:build:production"
+            "buildTarget": "@openshelf/api-gateway:build:production"
           }
         }
       },
