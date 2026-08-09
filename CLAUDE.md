@@ -58,3 +58,8 @@ Multi-vendor ecommerce SaaS. Nx monorepo, Express microservices, Next.js fronten
 - Ports: gateway 8080, auth 6001, product 6002, seller 6003, order 6004,
   notification 6005, recommender 6006. Frontends: user-ui 3000, seller-ui 3001,
   admin-ui 3002.
+
+## Infrastructure
+- MongoDB Atlas M0 auto-pauses after inactivity. "Server selection timeout"
+  usually means the cluster is paused or the IP allowlist is stale — check
+  the Atlas console before debugging code.

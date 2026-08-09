@@ -18,5 +18,15 @@
     "eslint.config.cjs",
     "eslint.config.mjs"
   ],
-  "references": []
+  "references": [
+    {
+      "path": "../../libs/shared/redis/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/prisma/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/shared/errors/tsconfig.lib.json"
+    }
+  ]
 }

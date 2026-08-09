@@ -66,6 +66,11 @@
     }
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "@openshelf/errors": "*",
+    "@openshelf/prisma": "*",
+    "@openshelf/redis": "*",
+    "bcryptjs": "^3.0.3",
+    "express": "^5.1.0",
+    "zod": "^4.4.3"
   }
 }
