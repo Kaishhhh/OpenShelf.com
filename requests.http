@@ -1,0 +1,57 @@
+@base = http://localhost:6001/api
+
+### Register
+POST {{base}}/register
+Content-Type: application/json
+
+{
+  "name": "Kai",
+  "email": "kai4@test.com",
+  "password": "password123"
+}
+
+### Verify OTP - paste the code from your terminal
+POST {{base}}/verify-otp
+Content-Type: application/json
+
+{
+  "email": "kai4@test.com",
+  "otp": "914196"
+}
+
+### Login
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "kai4@test.com",
+  "password": "password123"
+}
+
+### Login - wrong password
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "kai@test.com",
+  "password": "wrongpassword"
+}
+
+### Login - nonexistent email
+POST {{base}}/login
+Content-Type: application/json
+
+{
+  "email": "nobody@test.com",
+  "password": "password123"
+}
+
+### Register - bad input, should 400
+POST {{base}}/register
+Content-Type: application/json
+
+{
+  "name": "",
+  "email": "notanemail",
+  "password": "short"
+}

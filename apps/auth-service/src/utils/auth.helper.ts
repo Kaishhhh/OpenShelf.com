@@ -1,6 +1,8 @@
 import { randomInt } from 'crypto';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import { Role } from '@prisma/client';
 import { ValidationError } from '@openshelf/errors';
 
 export const registerSchema = z.object({
@@ -14,8 +16,14 @@ export const verifyOtpSchema = z.object({
   otp: z.string().regex(/^\d{6}$/, 'OTP must be a 6-digit code'),
 });
 
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
 
 export interface PendingRegistration {
   name: string;
@@ -50,4 +58,45 @@ export function generateOtp(): string {
 
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, BCRYPT_COST);
+}
+
+export function comparePassword(
+  password: string,
+  hash: string
+): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+export const MAX_LOGIN_ATTEMPTS = 5;
+export const LOGIN_ATTEMPTS_TTL_SECONDS = 900;
+export const LOGIN_LOCK_TTL_SECONDS = 900;
+
+export const loginAttemptsKey = (email: string) => `login_attempts:${email}`;
+export const loginLockKey = (email: string) => `login_lock:${email}`;
+
+if (!process.env.ACCESS_TOKEN_SECRET) {
+  throw new Error('ACCESS_TOKEN_SECRET is not set');
+}
+if (!process.env.REFRESH_TOKEN_SECRET) {
+  throw new Error('REFRESH_TOKEN_SECRET is not set');
+}
+
+export const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
+export const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface AuthTokenPayload {
+  sub: string;
+  role: Role;
+}
+
+export function signAccessToken(payload: AuthTokenPayload): string {
+  return jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET as string, {
+    expiresIn: '15m',
+  });
+}
+
+export function signRefreshToken(payload: AuthTokenPayload): string {
+  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET as string, {
+    expiresIn: '7d',
+  });
 }

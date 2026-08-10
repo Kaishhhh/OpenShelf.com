@@ -1,16 +1,25 @@
-import { Request, Response } from 'express';
-import { RateLimitError, ValidationError } from '@openshelf/errors';
+import { CookieOptions, Request, Response } from 'express';
+import { AuthError, RateLimitError, ValidationError } from '@openshelf/errors';
 import { prisma } from '@openshelf/prisma';
 import { redis } from '@openshelf/redis';
 import {
+  ACCESS_TOKEN_MAX_AGE_MS,
   ATTEMPTS_TTL_SECONDS,
   COOLDOWN_TTL_SECONDS,
   LOCK_TTL_SECONDS,
+  LOGIN_ATTEMPTS_TTL_SECONDS,
+  LOGIN_LOCK_TTL_SECONDS,
+  MAX_LOGIN_ATTEMPTS,
   MAX_OTP_ATTEMPTS,
   OTP_TTL_SECONDS,
   PendingRegistration,
+  REFRESH_TOKEN_MAX_AGE_MS,
+  comparePassword,
   generateOtp,
   hashPassword,
+  loginAttemptsKey,
+  loginLockKey,
+  loginSchema,
   otpAttemptsKey,
   otpCooldownKey,
   otpKey,
@@ -18,6 +27,8 @@ import {
   parseOrThrow,
   pendingRegKey,
   registerSchema,
+  signAccessToken,
+  signRefreshToken,
   verifyOtpSchema,
 } from '../utils/auth.helper.js';
 
@@ -26,6 +37,17 @@ const REGISTER_SUCCESS_MESSAGE =
 const TOO_MANY_ATTEMPTS_MESSAGE =
   'Too many failed attempts, please try again later';
 const CODE_INVALID_MESSAGE = 'Code expired or invalid';
+const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
+
+function authCookieOptions(maxAge: number): CookieOptions {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    path: '/',
+    maxAge,
+  };
+}
 
 export async function register(req: Request, res: Response) {
   const { name, email, password } = parseOrThrow(registerSchema, req.body);
@@ -112,4 +134,45 @@ export async function verifyOtp(req: Request, res: Response) {
   return res
     .status(200)
     .json({ message: 'Registration complete. You can now log in.' });
+}
+
+export async function login(req: Request, res: Response) {
+  const { email, password } = parseOrThrow(loginSchema, req.body);
+
+  if (await redis.exists(loginLockKey(email))) {
+    throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  const passwordMatches = user?.password
+    ? await comparePassword(password, user.password)
+    : false;
+
+  if (!user || !passwordMatches) {
+    const attempts = await redis.incr(loginAttemptsKey(email));
+    if (attempts === 1) {
+      await redis.expire(loginAttemptsKey(email), LOGIN_ATTEMPTS_TTL_SECONDS);
+    }
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+      await redis.set(loginLockKey(email), '1', 'EX', LOGIN_LOCK_TTL_SECONDS);
+      throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
+    }
+    throw new AuthError(INVALID_CREDENTIALS_MESSAGE);
+  }
+
+  if (!user.emailVerified) {
+    throw new AuthError('Please verify your email before logging in');
+  }
+
+  await redis.del(loginAttemptsKey(email));
+
+  const payload = { sub: user.id, role: user.role };
+  const accessToken = signAccessToken(payload);
+  const refreshToken = signRefreshToken(payload);
+
+  return res
+    .cookie('access_token', accessToken, authCookieOptions(ACCESS_TOKEN_MAX_AGE_MS))
+    .cookie('refresh_token', refreshToken, authCookieOptions(REFRESH_TOKEN_MAX_AGE_MS))
+    .status(200)
+    .json({ id: user.id, name: user.name, email: user.email });
 }
