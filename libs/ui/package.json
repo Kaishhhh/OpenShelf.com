@@ -1,5 +1,5 @@
 {
-  "name": "@openshelf/types",
+  "name": "@openshelf/ui",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -13,7 +13,5 @@
     },
     "./package.json": "./package.json"
   },
-  "dependencies": {
-    "zod": "^4.4.3"
-  }
+  "dependencies": {}
 }

@@ -43,7 +43,7 @@ function authCookieOptions(maxAge: number): CookieOptions {
   return {
     httpOnly: true,
     secure: true,
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
     path: '/',
     maxAge,
   };

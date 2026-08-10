@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+@source "../../../../libs/ui/src/**/*.tsx";
+
+@theme {
+    --color-ink: oklch(0.22 0.01 250);
+    --color-ink-muted: oklch(0.52 0.01 250);
+    --color-line: oklch(0.90 0.005 250);
+    --color-surface: oklch(0.99 0.002 250);
+    --color-accent: oklch(0.55 0.18 250);
+    --color-accent-hover: oklch(0.48 0.18 250);
+    --color-danger: oklch(0.55 0.20 25);
+
+    --font-sans: "Inter", system-ui, sans-serif;
+
+    --radius-card: 4px;
+}

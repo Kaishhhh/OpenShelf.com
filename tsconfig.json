@@ -29,6 +29,9 @@
     },
     {
       "path": "./libs/shared/redis"
+    },
+    {
+      "path": "./libs/ui"
     }
   ],
   "compilerOptions": {}
