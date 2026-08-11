@@ -14,7 +14,9 @@ import {
   OTP_TTL_SECONDS,
   PendingRegistration,
   REFRESH_TOKEN_MAX_AGE_MS,
+  REFRESH_TOKEN_TTL_SECONDS,
   comparePassword,
+  deleteAllRefreshTokensForUser,
   generateOtp,
   hashPassword,
   loginAttemptsKey,
@@ -26,10 +28,12 @@ import {
   otpLockKey,
   parseOrThrow,
   pendingRegKey,
+  refreshTokenKey,
   registerSchema,
   signAccessToken,
   signRefreshToken,
   verifyOtpSchema,
+  verifyRefreshToken,
 } from '../utils/auth.helper.js';
 
 const REGISTER_SUCCESS_MESSAGE =
@@ -38,15 +42,24 @@ const TOO_MANY_ATTEMPTS_MESSAGE =
   'Too many failed attempts, please try again later';
 const CODE_INVALID_MESSAGE = 'Code expired or invalid';
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
+const INVALID_REFRESH_TOKEN_MESSAGE = 'Invalid refresh token';
 
-function authCookieOptions(maxAge: number): CookieOptions {
+function cookieFlags(): Omit<CookieOptions, 'maxAge'> {
   return {
     httpOnly: true,
     secure: true,
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
     path: '/',
-    maxAge,
   };
+}
+
+function authCookieOptions(maxAge: number): CookieOptions {
+  return { ...cookieFlags(), maxAge };
+}
+
+function clearAuthCookies(res: Response): void {
+  res.clearCookie('access_token', cookieFlags());
+  res.clearCookie('refresh_token', cookieFlags());
 }
 
 export async function register(req: Request, res: Response) {
@@ -168,11 +181,82 @@ export async function login(req: Request, res: Response) {
 
   const payload = { sub: user.id, role: user.role };
   const accessToken = signAccessToken(payload);
-  const refreshToken = signRefreshToken(payload);
+  const { token: refreshToken, jti } = signRefreshToken(payload);
+  await redis.set(
+    refreshTokenKey(user.id, jti),
+    '1',
+    'EX',
+    REFRESH_TOKEN_TTL_SECONDS
+  );
 
   return res
     .cookie('access_token', accessToken, authCookieOptions(ACCESS_TOKEN_MAX_AGE_MS))
     .cookie('refresh_token', refreshToken, authCookieOptions(REFRESH_TOKEN_MAX_AGE_MS))
     .status(200)
     .json({ id: user.id, name: user.name, email: user.email });
+}
+
+export async function refreshToken(req: Request, res: Response) {
+  const token = req.cookies?.refresh_token;
+  if (!token) {
+    throw new AuthError(INVALID_REFRESH_TOKEN_MESSAGE);
+  }
+
+  const decoded = verifyRefreshToken(token);
+  const tokenKey = refreshTokenKey(decoded.sub, decoded.jti);
+
+  if (!(await redis.exists(tokenKey))) {
+    await deleteAllRefreshTokensForUser(decoded.sub);
+    clearAuthCookies(res);
+    console.error('[auth-service] Refresh token reuse detected', {
+      userId: decoded.sub,
+      jti: decoded.jti,
+    });
+    throw new AuthError(INVALID_REFRESH_TOKEN_MESSAGE);
+  }
+
+  await redis.del(tokenKey);
+
+  const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
+  if (!user) {
+    clearAuthCookies(res);
+    throw new AuthError(INVALID_REFRESH_TOKEN_MESSAGE);
+  }
+
+  const payload = { sub: user.id, role: user.role };
+  const accessToken = signAccessToken(payload);
+  const { token: newRefreshToken, jti: newJti } = signRefreshToken(payload);
+  await redis.set(
+    refreshTokenKey(user.id, newJti),
+    '1',
+    'EX',
+    REFRESH_TOKEN_TTL_SECONDS
+  );
+
+  return res
+    .cookie('access_token', accessToken, authCookieOptions(ACCESS_TOKEN_MAX_AGE_MS))
+    .cookie(
+      'refresh_token',
+      newRefreshToken,
+      authCookieOptions(REFRESH_TOKEN_MAX_AGE_MS)
+    )
+    .status(200)
+    .json({ id: user.id, name: user.name, email: user.email });
+}
+
+export async function logout(req: Request, res: Response) {
+  const token = req.cookies?.refresh_token;
+
+  if (token) {
+    try {
+      const decoded = verifyRefreshToken(token);
+      await redis.del(refreshTokenKey(decoded.sub, decoded.jti));
+    } catch {
+      // Logout is idempotent — an invalid, expired, or already-revoked
+      // token is not an error here.
+    }
+  }
+
+  clearAuthCookies(res);
+  return res.status(200).json({ message: 'Logged out' });
 }

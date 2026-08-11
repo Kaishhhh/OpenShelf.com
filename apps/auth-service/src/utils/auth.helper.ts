@@ -1,9 +1,10 @@
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { Role } from '@prisma/client';
-import { ValidationError } from '@openshelf/errors';
+import { AuthError, ValidationError } from '@openshelf/errors';
+import { redis } from '@openshelf/redis';
 
 export {
   registerSchema,
@@ -71,11 +72,19 @@ if (!process.env.REFRESH_TOKEN_SECRET) {
 }
 
 export const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
-export const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const REFRESH_TOKEN_MAX_AGE_MS = REFRESH_TOKEN_TTL_SECONDS * 1000;
+
+export const refreshTokenKey = (userId: string, jti: string) =>
+  `refresh:${userId}:${jti}`;
 
 export interface AuthTokenPayload {
   sub: string;
   role: Role;
+}
+
+export interface RefreshTokenPayload extends AuthTokenPayload {
+  jti: string;
 }
 
 export function signAccessToken(payload: AuthTokenPayload): string {
@@ -84,8 +93,49 @@ export function signAccessToken(payload: AuthTokenPayload): string {
   });
 }
 
-export function signRefreshToken(payload: AuthTokenPayload): string {
-  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET as string, {
-    expiresIn: '7d',
-  });
+export function signRefreshToken(
+  payload: AuthTokenPayload
+): { token: string; jti: string } {
+  const jti = randomUUID();
+  const token = jwt.sign(
+    { ...payload, jti },
+    process.env.REFRESH_TOKEN_SECRET as string,
+    { expiresIn: '7d' }
+  );
+  return { token, jti };
+}
+
+export function verifyRefreshToken(token: string): RefreshTokenPayload {
+  try {
+    return jwt.verify(
+      token,
+      process.env.REFRESH_TOKEN_SECRET as string
+    ) as RefreshTokenPayload;
+  } catch {
+    throw new AuthError('Invalid refresh token');
+  }
+}
+
+export async function deleteAllRefreshTokensForUser(
+  userId: string
+): Promise<void> {
+  const pattern = `refresh:${userId}:*`;
+  const keysToDelete: string[] = [];
+  let cursor = '0';
+
+  do {
+    const [nextCursor, keys] = await redis.scan(
+      cursor,
+      'MATCH',
+      pattern,
+      'COUNT',
+      100
+    );
+    keysToDelete.push(...keys);
+    cursor = nextCursor;
+  } while (cursor !== '0');
+
+  if (keysToDelete.length > 0) {
+    await redis.del(...keysToDelete);
+  }
 }
