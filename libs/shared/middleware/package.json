@@ -13,5 +13,9 @@
     },
     "./package.json": "./package.json"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@openshelf/errors": "*",
+    "@openshelf/prisma": "*",
+    "jsonwebtoken": "^9.0.3"
+  }
 }

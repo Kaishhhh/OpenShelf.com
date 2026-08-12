@@ -29,6 +29,9 @@
       "path": "../../libs/prisma/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/shared/middleware/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/shared/errors/tsconfig.lib.json"
     }
   ]

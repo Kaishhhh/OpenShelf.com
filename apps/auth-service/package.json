@@ -67,6 +67,7 @@
   },
   "dependencies": {
     "@openshelf/errors": "*",
+    "@openshelf/middleware": "*",
     "@openshelf/prisma": "*",
     "@openshelf/redis": "*",
     "@openshelf/types": "*",

@@ -260,3 +260,14 @@ export async function logout(req: Request, res: Response) {
   clearAuthCookies(res);
   return res.status(200).json({ message: 'Logged out' });
 }
+
+export async function me(req: Request, res: Response) {
+  const user = req.user;
+  if (!user) {
+    throw new AuthError('Not authenticated');
+  }
+
+  return res
+    .status(200)
+    .json({ id: user.id, name: user.name, email: user.email });
+}

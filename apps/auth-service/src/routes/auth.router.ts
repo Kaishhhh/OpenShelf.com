@@ -1,7 +1,9 @@
 import { Router } from 'express';
+import { isAuthenticated } from '@openshelf/middleware';
 import {
   login,
   logout,
+  me,
   refreshToken,
   register,
   verifyOtp,
@@ -14,3 +16,4 @@ authRouter.post('/verify-otp', verifyOtp);
 authRouter.post('/login', login);
 authRouter.post('/refresh-token', refreshToken);
 authRouter.post('/logout', logout);
+authRouter.get('/me', isAuthenticated, me);
