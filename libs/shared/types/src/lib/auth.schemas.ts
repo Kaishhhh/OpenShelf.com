@@ -16,6 +16,15 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const sellerRegisterSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required'),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  phoneNumber: z.string().trim().min(1, 'Phone number is required'),
+  country: z.string().trim().min(1, 'Country is required'),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type SellerRegisterInput = z.infer<typeof sellerRegisterSchema>;
