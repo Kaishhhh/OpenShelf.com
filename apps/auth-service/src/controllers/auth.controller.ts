@@ -4,62 +4,42 @@ import { prisma } from '@openshelf/prisma';
 import { redis } from '@openshelf/redis';
 import {
   ACCESS_TOKEN_MAX_AGE_MS,
-  ATTEMPTS_TTL_SECONDS,
-  COOLDOWN_TTL_SECONDS,
-  LOCK_TTL_SECONDS,
-  LOGIN_ATTEMPTS_TTL_SECONDS,
-  LOGIN_LOCK_TTL_SECONDS,
-  MAX_LOGIN_ATTEMPTS,
-  MAX_OTP_ATTEMPTS,
-  OTP_TTL_SECONDS,
-  PendingRegistration,
+  INVALID_REFRESH_TOKEN_MESSAGE,
   REFRESH_TOKEN_MAX_AGE_MS,
   REFRESH_TOKEN_TTL_SECONDS,
+  TOO_MANY_ATTEMPTS_MESSAGE,
+  checkAndBumpLoginAttempts,
+  clearAuthCookies,
+  clearLoginAttempts,
   comparePassword,
+  consumeOtp,
+  cookieFlags,
   deleteAllRefreshTokensForUser,
-  generateOtp,
   hashPassword,
-  loginAttemptsKey,
+  issueOtp,
   loginLockKey,
-  loginSchema,
-  otpAttemptsKey,
   otpCooldownKey,
-  otpKey,
   otpLockKey,
-  parseOrThrow,
-  pendingRegKey,
   refreshTokenKey,
-  registerSchema,
   signAccessToken,
   signRefreshToken,
-  verifyOtpSchema,
   verifyRefreshToken,
+} from '@openshelf/auth';
+import {
+  PendingRegistration,
+  loginSchema,
+  parseOrThrow,
+  registerSchema,
+  verifyOtpSchema,
 } from '../utils/auth.helper.js';
+
+const NAMESPACE = 'user';
 
 const REGISTER_SUCCESS_MESSAGE =
   'Verification code sent. Please check your email.';
-const TOO_MANY_ATTEMPTS_MESSAGE =
-  'Too many failed attempts, please try again later';
-const CODE_INVALID_MESSAGE = 'Code expired or invalid';
-const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
-const INVALID_REFRESH_TOKEN_MESSAGE = 'Invalid refresh token';
-
-function cookieFlags(): Omit<CookieOptions, 'maxAge'> {
-  return {
-    httpOnly: true,
-    secure: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-    path: '/',
-  };
-}
 
 function authCookieOptions(maxAge: number): CookieOptions {
   return { ...cookieFlags(), maxAge };
-}
-
-function clearAuthCookies(res: Response): void {
-  res.clearCookie('access_token', cookieFlags());
-  res.clearCookie('refresh_token', cookieFlags());
 }
 
 export async function register(req: Request, res: Response) {
@@ -72,23 +52,16 @@ export async function register(req: Request, res: Response) {
     return res.status(200).json({ message: REGISTER_SUCCESS_MESSAGE });
   }
 
-  if (await redis.exists(otpCooldownKey(email))) {
+  if (await redis.exists(otpCooldownKey(NAMESPACE, email))) {
     throw new RateLimitError('Please wait before requesting another code');
   }
-  if (await redis.exists(otpLockKey(email))) {
+  if (await redis.exists(otpLockKey(NAMESPACE, email))) {
     throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
   }
 
   const hashedPassword = await hashPassword(password);
-  const otp = generateOtp();
   const pending: PendingRegistration = { name, email, hashedPassword };
-
-  await redis
-    .pipeline()
-    .set(otpKey(email), otp, 'EX', OTP_TTL_SECONDS)
-    .set(pendingRegKey(email), JSON.stringify(pending), 'EX', OTP_TTL_SECONDS)
-    .set(otpCooldownKey(email), '1', 'EX', COOLDOWN_TTL_SECONDS)
-    .exec();
+  const otp = await issueOtp(NAMESPACE, email, pending);
 
   // TODO: send `otp` to `email` via the transactional email provider
   console.log(`[auth-service] TODO send OTP email to ${email}: ${otp}`);
@@ -99,32 +72,11 @@ export async function register(req: Request, res: Response) {
 export async function verifyOtp(req: Request, res: Response) {
   const { email, otp } = parseOrThrow(verifyOtpSchema, req.body);
 
-  if (await redis.exists(otpLockKey(email))) {
-    throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
-  }
-
-  const storedOtp = await redis.get(otpKey(email));
-  if (!storedOtp) {
-    throw new ValidationError(CODE_INVALID_MESSAGE);
-  }
-
-  if (storedOtp !== otp) {
-    const attempts = await redis.incr(otpAttemptsKey(email));
-    if (attempts === 1) {
-      await redis.expire(otpAttemptsKey(email), ATTEMPTS_TTL_SECONDS);
-    }
-    if (attempts >= MAX_OTP_ATTEMPTS) {
-      await redis.set(otpLockKey(email), '1', 'EX', LOCK_TTL_SECONDS);
-      throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
-    }
-    throw new ValidationError(CODE_INVALID_MESSAGE);
-  }
-
-  const pendingRaw = await redis.get(pendingRegKey(email));
-  if (!pendingRaw) {
-    throw new ValidationError(CODE_INVALID_MESSAGE);
-  }
-  const pending: PendingRegistration = JSON.parse(pendingRaw);
+  const pending = await consumeOtp<PendingRegistration>(
+    NAMESPACE,
+    email,
+    otp
+  );
 
   // Someone could have registered this email through a separate path in
   // the window between register and verify-otp — re-check before creating.
@@ -142,8 +94,6 @@ export async function verifyOtp(req: Request, res: Response) {
     },
   });
 
-  await redis.del(otpKey(email), pendingRegKey(email), otpAttemptsKey(email));
-
   return res
     .status(200)
     .json({ message: 'Registration complete. You can now log in.' });
@@ -152,7 +102,7 @@ export async function verifyOtp(req: Request, res: Response) {
 export async function login(req: Request, res: Response) {
   const { email, password } = parseOrThrow(loginSchema, req.body);
 
-  if (await redis.exists(loginLockKey(email))) {
+  if (await redis.exists(loginLockKey(NAMESPACE, email))) {
     throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
   }
 
@@ -162,28 +112,21 @@ export async function login(req: Request, res: Response) {
     : false;
 
   if (!user || !passwordMatches) {
-    const attempts = await redis.incr(loginAttemptsKey(email));
-    if (attempts === 1) {
-      await redis.expire(loginAttemptsKey(email), LOGIN_ATTEMPTS_TTL_SECONDS);
-    }
-    if (attempts >= MAX_LOGIN_ATTEMPTS) {
-      await redis.set(loginLockKey(email), '1', 'EX', LOGIN_LOCK_TTL_SECONDS);
-      throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
-    }
-    throw new AuthError(INVALID_CREDENTIALS_MESSAGE);
+    await checkAndBumpLoginAttempts(NAMESPACE, email);
+    return; // unreachable — checkAndBumpLoginAttempts always throws
   }
 
   if (!user.emailVerified) {
     throw new AuthError('Please verify your email before logging in');
   }
 
-  await redis.del(loginAttemptsKey(email));
+  await clearLoginAttempts(NAMESPACE, email);
 
   const payload = { sub: user.id, role: user.role };
   const accessToken = signAccessToken(payload);
   const { token: refreshToken, jti } = signRefreshToken(payload);
   await redis.set(
-    refreshTokenKey(user.id, jti),
+    refreshTokenKey(NAMESPACE, user.id, jti),
     '1',
     'EX',
     REFRESH_TOKEN_TTL_SECONDS
@@ -203,10 +146,10 @@ export async function refreshToken(req: Request, res: Response) {
   }
 
   const decoded = verifyRefreshToken(token);
-  const tokenKey = refreshTokenKey(decoded.sub, decoded.jti);
+  const tokenKey = refreshTokenKey(NAMESPACE, decoded.sub, decoded.jti);
 
   if (!(await redis.exists(tokenKey))) {
-    await deleteAllRefreshTokensForUser(decoded.sub);
+    await deleteAllRefreshTokensForUser(NAMESPACE, decoded.sub);
     clearAuthCookies(res);
     console.error('[auth-service] Refresh token reuse detected', {
       userId: decoded.sub,
@@ -227,7 +170,7 @@ export async function refreshToken(req: Request, res: Response) {
   const accessToken = signAccessToken(payload);
   const { token: newRefreshToken, jti: newJti } = signRefreshToken(payload);
   await redis.set(
-    refreshTokenKey(user.id, newJti),
+    refreshTokenKey(NAMESPACE, user.id, newJti),
     '1',
     'EX',
     REFRESH_TOKEN_TTL_SECONDS
@@ -250,7 +193,7 @@ export async function logout(req: Request, res: Response) {
   if (token) {
     try {
       const decoded = verifyRefreshToken(token);
-      await redis.del(refreshTokenKey(decoded.sub, decoded.jti));
+      await redis.del(refreshTokenKey(NAMESPACE, decoded.sub, decoded.jti));
     } catch {
       // Logout is idempotent — an invalid, expired, or already-revoked
       // token is not an error here.
