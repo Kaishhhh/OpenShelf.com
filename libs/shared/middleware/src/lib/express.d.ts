@@ -1,4 +1,4 @@
-import type { Seller, User } from '@prisma/client';
+import type { Seller, Shop, User } from '@prisma/client';
 
 export type AuthenticatedUser = Omit<User, 'password'>;
 export type AuthenticatedSeller = Omit<Seller, 'password'>;
@@ -8,6 +8,7 @@ declare global {
     interface Request {
       user?: AuthenticatedUser;
       seller?: AuthenticatedSeller;
+      shop?: Shop;
     }
   }
 }

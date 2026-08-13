@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import * as path from 'path';
 import { errorMiddleware } from '@openshelf/errors';
 import { sellerAuthRouter } from './routes/seller-auth.router.js';
+import { shopRouter } from './routes/shop.router.js';
 
 
 const app = express();
@@ -18,6 +19,7 @@ app.get('/api', (req, res) => {
 });
 
 app.use('/api', sellerAuthRouter);
+app.use('/api', shopRouter);
 
 app.use(errorMiddleware);
 
