@@ -1,7 +1,6 @@
 
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import * as path from 'path';
 import { errorMiddleware } from '@openshelf/errors';
@@ -9,11 +8,6 @@ import { authRouter } from './routes/auth.router.js';
 
 
 const app = express();
-
-app.use(cors({
-  origin: process.env.USER_UI_URL || 'http://localhost:3000',
-  credentials: true,
-}));
 
 app.use(express.json());
 app.use(cookieParser());

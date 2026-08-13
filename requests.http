@@ -1,4 +1,5 @@
-@base = http://localhost:6001/api
+@base = http://localhost:8080/auth
+@seller = http://localhost:8080/seller
 
 ### Register
 POST {{base}}/register
@@ -55,3 +56,39 @@ Content-Type: application/json
   "email": "notanemail",
   "password": "short"
 }
+
+### Health
+GET http://localhost:8080/health
+
+### Seller register
+POST {{seller}}/register
+Content-Type: application/json
+
+{
+  "name": "Kai Shop",
+  "email": "seller1@test.com",
+  "password": "password123",
+  "phoneNumber": "+6582031911",
+  "country": "SG"
+}
+
+### Seller verify
+POST {{seller}}/verify-otp
+Content-Type: application/json
+
+{
+  "email": "seller1@test.com",
+  "otp": "123456"
+}
+
+### Seller login
+POST {{seller}}/login
+Content-Type: application/json
+
+{
+  "email": "seller1@test.com",
+  "password": "password123"
+}
+
+### Seller me
+GET {{seller}}/me
