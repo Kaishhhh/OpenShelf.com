@@ -63,3 +63,9 @@ Multi-vendor ecommerce SaaS. Nx monorepo, Express microservices, Next.js fronten
 - MongoDB Atlas M0 auto-pauses after inactivity. "Server selection timeout"
   usually means the cluster is paused or the IP allowlist is stale — check
   the Atlas console before debugging code.
+
+  ## Standalone scripts
+- Scripts run directly through Node (not via Nx/webpack/jest) cannot import
+  @openshelf/* libs — they resolve to raw .ts with .js-suffixed relative
+  imports that Node won't follow. Import @prisma/client and other npm
+  packages directly instead.

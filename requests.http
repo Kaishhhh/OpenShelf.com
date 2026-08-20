@@ -1,5 +1,6 @@
 @base = http://localhost:8080/auth
 @seller = http://localhost:8080/seller
+@admin = http://localhost:8080/admin
 
 ### Register
 POST {{base}}/register
@@ -92,3 +93,38 @@ Content-Type: application/json
 
 ### Seller me
 GET {{seller}}/me
+
+### Admin login
+POST {{admin}}/login
+Content-Type: application/json
+
+{
+  "email": "admin@openshelf.test",
+  "password": "ChangeMe123!"
+}
+
+### Admin refresh token
+POST {{admin}}/refresh-token
+
+### Admin logout
+POST {{admin}}/logout
+
+### Admin me
+GET {{admin}}/me
+
+### Admin - list pending shops
+GET {{admin}}/shops?status=pending&page=1&limit=20
+
+### Admin - list all shops
+GET {{admin}}/shops?status=all
+
+### Admin - approve a shop
+PATCH {{admin}}/shops/REPLACE_WITH_SHOP_ID/approve
+
+### Admin - reject a shop
+PATCH {{admin}}/shops/REPLACE_WITH_SHOP_ID/reject
+Content-Type: application/json
+
+{
+  "reason": "Address could not be verified"
+}

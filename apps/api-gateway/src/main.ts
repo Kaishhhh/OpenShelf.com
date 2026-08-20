@@ -40,6 +40,8 @@ const AUTH_SERVICE_URL =
   process.env.AUTH_SERVICE_URL || 'http://localhost:6001';
 const SELLER_SERVICE_URL =
   process.env.SELLER_SERVICE_URL || 'http://localhost:6003';
+const ADMIN_SERVICE_URL =
+  process.env.ADMIN_SERVICE_URL || 'http://localhost:6007';
 
 app.use(
   '/auth',
@@ -53,6 +55,14 @@ app.use(
   '/seller',
   createProxyMiddleware({
     target: `${SELLER_SERVICE_URL}/api`,
+    changeOrigin: true,
+  })
+);
+
+app.use(
+  '/admin',
+  createProxyMiddleware({
+    target: `${ADMIN_SERVICE_URL}/api`,
     changeOrigin: true,
   })
 );

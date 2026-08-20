@@ -3,10 +3,11 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "nx run-many -t serve dev --projects=@openshelf/api-gateway,@openshelf/auth-service,@openshelf/seller-service,@openshelf/user-ui",
+    "dev": "nx run-many -t serve dev --projects=@openshelf/api-gateway,@openshelf/auth-service,@openshelf/seller-service,@openshelf/admin-service,@openshelf/user-ui",
     "prisma:generate": "prisma generate --schema=libs/prisma/prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=libs/prisma/prisma/schema.prisma",
-    "prisma:studio": "prisma studio --schema=libs/prisma/prisma/schema.prisma"
+    "prisma:studio": "prisma studio --schema=libs/prisma/prisma/schema.prisma",
+    "seed:admin": "node -r @swc-node/register tools/seed-admin.ts"
   },
   "private": true,
   "devDependencies": {

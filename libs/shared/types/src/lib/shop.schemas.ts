@@ -37,3 +37,19 @@ export const shopCreateSchema = z.object({
 });
 
 export type ShopCreateInput = z.infer<typeof shopCreateSchema>;
+
+export const shopRejectSchema = z.object({
+  reason: z.string().trim().max(500, 'Reason is too long').optional(),
+});
+
+export type ShopRejectInput = z.infer<typeof shopRejectSchema>;
+
+export const shopModerationQuerySchema = z.object({
+  status: z.enum(['pending', 'approved', 'all']).optional().default('all'),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+});
+
+export type ShopModerationQueryInput = z.infer<
+  typeof shopModerationQuerySchema
+>;
