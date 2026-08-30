@@ -1,6 +1,7 @@
 @base = http://localhost:8080/auth
 @seller = http://localhost:8080/seller
 @admin = http://localhost:8080/admin
+@product = http://localhost:8080/product
 
 ### Register
 POST {{base}}/register
@@ -128,3 +129,152 @@ Content-Type: application/json
 {
   "reason": "Address could not be verified"
 }
+### Product - create
+POST {{product}}
+Content-Type: application/json
+
+{
+  "title": "Ceramic Mug",
+  "description": "A hand-thrown stoneware mug, 300ml.",
+  "category": "Homeware",
+  "subCategory": "Drinkware",
+  "tags": ["ceramic", "handmade", "mug"],
+  "price": 24.5,
+  "salePrice": 19.99,
+  "stock": 12
+}
+
+### Product - list mine, paginated
+GET {{product}}/mine?page=1&limit=20
+
+### Product - fetch one
+GET {{product}}/REPLACE_WITH_PRODUCT_ID
+
+### Product - update
+PATCH {{product}}/REPLACE_WITH_PRODUCT_ID
+Content-Type: application/json
+
+{
+  "title": "Ceramic Mug (Large)",
+  "price": 29.5,
+  "salePrice": 24.0
+}
+
+### Product - unpublish (ACTIVE -> DRAFT)
+PATCH {{product}}/REPLACE_WITH_PRODUCT_ID
+Content-Type: application/json
+
+{
+  "status": "DRAFT"
+}
+
+### Product - soft delete (status -> DELETED)
+DELETE {{product}}/REPLACE_WITH_PRODUCT_ID
+
+### Product - public fetch by slug, no auth
+GET {{product}}/public/ceramic-mug
+
+### Product - another shop's id, should 404 (not 403)
+GET {{product}}/REPLACE_WITH_OTHER_SHOPS_PRODUCT_ID
+
+### Product - body carrying shopId, should 400
+POST {{product}}
+Content-Type: application/json
+
+{
+  "title": "Injected",
+  "description": "Tries to plant a product in another shop.",
+  "category": "Homeware",
+  "price": 10,
+  "shopId": "REPLACE_WITH_OTHER_SHOP_ID"
+}
+
+### Product - client-supplied slug, should 400
+POST {{product}}
+Content-Type: application/json
+
+{
+  "title": "Slug Squatter",
+  "description": "Tries to pick its own slug.",
+  "category": "Homeware",
+  "price": 10,
+  "slug": "premium-mug"
+}
+
+### Product - salePrice >= price, should 400
+POST {{product}}
+Content-Type: application/json
+
+{
+  "title": "Bad Sale",
+  "description": "Sale price is not below price.",
+  "category": "Homeware",
+  "price": 10,
+  "salePrice": 15
+}
+
+### Product - 21 tags, should 400
+POST {{product}}
+Content-Type: application/json
+
+{
+  "title": "Keyword Stuffed",
+  "description": "Too many tags.",
+  "category": "Homeware",
+  "price": 10,
+  "tags": ["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12","t13","t14","t15","t16","t17","t18","t19","t20","t21"]
+}
+
+### Product - upload auth for a direct browser upload
+# Returns { token, expire, signature } only. The browser POSTs these to
+# https://upload.imagekit.io/api/v1/files/upload along with the file and the
+# public key; IMAGEKIT_PRIVATE_KEY stays on the server and must not appear here.
+GET {{product}}/upload-auth
+
+### Product - attach an uploaded image
+# fileId and url are whatever ImageKit returned to the browser. The server
+# re-fetches the file by id and stores its own url, so neither is trusted.
+POST {{product}}/REPLACE_WITH_PRODUCT_ID/images
+Content-Type: application/json
+
+{
+  "fileId": "REPLACE_WITH_IMAGEKIT_FILE_ID",
+  "url": "REPLACE_WITH_IMAGEKIT_URL"
+}
+
+### Product - attach a forged fileId, should 400
+POST {{product}}/REPLACE_WITH_PRODUCT_ID/images
+Content-Type: application/json
+
+{
+  "fileId": "notarealfileid00000000",
+  "url": "https://ik.imagekit.io/openshelf/anything.jpg"
+}
+
+### Product - real fileId, url pointing elsewhere, should 400
+POST {{product}}/REPLACE_WITH_PRODUCT_ID/images
+Content-Type: application/json
+
+{
+  "fileId": "REPLACE_WITH_IMAGEKIT_FILE_ID",
+  "url": "https://evil.example.com/tracker.jpg"
+}
+
+### Product - attach to another shop's product, should 404 (not 403)
+POST {{product}}/REPLACE_WITH_OTHER_SHOPS_PRODUCT_ID/images
+Content-Type: application/json
+
+{
+  "fileId": "REPLACE_WITH_IMAGEKIT_FILE_ID",
+  "url": "REPLACE_WITH_IMAGEKIT_URL"
+}
+
+### Product - delete an image (removed from ImageKit first, then the row)
+DELETE {{product}}/REPLACE_WITH_PRODUCT_ID/images/REPLACE_WITH_IMAGE_ID
+
+### Product - fetch one, now including images
+GET {{product}}/REPLACE_WITH_PRODUCT_ID
+
+### Product - background removal is a render-time URL transform, not a stored row
+# Nothing to persist for this; append ?tr=e-bgremove to the stored url.
+# GET https://ik.imagekit.io/<endpoint>/<path>.jpg?tr=e-bgremove

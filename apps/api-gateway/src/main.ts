@@ -42,6 +42,8 @@ const SELLER_SERVICE_URL =
   process.env.SELLER_SERVICE_URL || 'http://localhost:6003';
 const ADMIN_SERVICE_URL =
   process.env.ADMIN_SERVICE_URL || 'http://localhost:6007';
+const PRODUCT_SERVICE_URL =
+  process.env.PRODUCT_SERVICE_URL || 'http://localhost:6002';
 
 app.use(
   '/auth',
@@ -63,6 +65,17 @@ app.use(
   '/admin',
   createProxyMiddleware({
     target: `${ADMIN_SERVICE_URL}/api`,
+    changeOrigin: true,
+  })
+);
+
+// Target is /api/product, not /api like the routes above. Express strips the
+// '/product' mount before the proxy sees the request, so an /api target would
+// forward /product/mine as /api/mine.
+app.use(
+  '/product',
+  createProxyMiddleware({
+    target: `${PRODUCT_SERVICE_URL}/api/product`,
     changeOrigin: true,
   })
 );

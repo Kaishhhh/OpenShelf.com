@@ -41,6 +41,12 @@
     },
     {
       "path": "./apps/admin-service"
+    },
+    {
+      "path": "./apps/product-service"
+    },
+    {
+      "path": "./libs/shared/imagekit"
     }
   ],
   "compilerOptions": {}
