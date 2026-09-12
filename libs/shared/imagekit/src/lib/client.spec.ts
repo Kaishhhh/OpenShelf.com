@@ -75,7 +75,7 @@ describe('imagekit()', () => {
 });
 
 describe('getUploadAuth', () => {
-  it('returns exactly token, expire and signature', () => {
+  it('returns exactly publicKey, token, expire and signature', () => {
     fake.getAuthenticationParameters.mockReturnValue({
       token: 'tok',
       expire: 1234,
@@ -84,8 +84,18 @@ describe('getUploadAuth', () => {
 
     const auth = getUploadAuth();
 
-    expect(Object.keys(auth).sort()).toEqual(['expire', 'signature', 'token']);
-    expect(auth).toEqual({ token: 'tok', expire: 1234, signature: 'sig' });
+    expect(Object.keys(auth).sort()).toEqual([
+      'expire',
+      'publicKey',
+      'signature',
+      'token',
+    ]);
+    expect(auth).toEqual({
+      publicKey: 'public_abc',
+      token: 'tok',
+      expire: 1234,
+      signature: 'sig',
+    });
   });
 
   it('drops any extra field the SDK might add, so nothing widens silently', () => {

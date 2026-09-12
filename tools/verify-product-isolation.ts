@@ -122,7 +122,9 @@ async function seed() {
     await prisma.shop.create({
       data: {
         name: shop,
-        category: 'Homeware',
+        // Must be a member of CATEGORIES; this row bypasses zod, so a
+        // stale value would go in unnoticed and drift from what the API allows.
+        category: 'Home & Garden',
         address: '1 Test Street',
         sellerId: seller.id,
         status: 'APPROVED',
@@ -232,7 +234,7 @@ async function createFixture(cookie: string, title: string): Promise<string> {
     body: {
       title,
       description: 'Fixture for the ImageKit checks.',
-      category: 'Homeware',
+      category: 'Home & Garden',
       price: 10,
       stock: 1,
     },
@@ -260,10 +262,10 @@ async function verifyImages(cookieA: string, cookieB: string): Promise<void> {
   const auth = await request('get', '/product/upload-auth', { cookie: cookieA });
   check('GET /product/upload-auth -> 200', auth.status === 200, `got ${auth.status}`);
   check(
-    'returns exactly token, expire, signature',
+    'returns exactly publicKey, token, expire, signature',
     auth.status === 200 &&
       JSON.stringify(Object.keys(auth.data).sort()) ===
-        JSON.stringify(['expire', 'signature', 'token']),
+        JSON.stringify(['expire', 'publicKey', 'signature', 'token']),
     `got ${JSON.stringify(Object.keys(auth.data ?? {}))}`
   );
 
@@ -425,7 +427,7 @@ async function main() {
     body: {
       title: 'Isolation Mug A',
       description: "Seller A's product.",
-      category: 'Homeware',
+      category: 'Home & Garden',
       tags: ['a'],
       price: 20,
       salePrice: 15,
@@ -437,7 +439,7 @@ async function main() {
     body: {
       title: 'Isolation Bowl B',
       description: "Seller B's product.",
-      category: 'Homeware',
+      category: 'Home & Garden',
       price: 30,
       stock: 1,
     },
@@ -499,7 +501,7 @@ async function main() {
     body: {
       title: 'Injected',
       description: 'Carries a shopId.',
-      category: 'Homeware',
+      category: 'Home & Garden',
       price: 10,
       shopId: productB.shopId,
     },
@@ -508,13 +510,13 @@ async function main() {
 
   const withSlug = await request('post', '/product', {
     cookie: cookieA,
-    body: { title: 'Slug Squatter', description: 'x', category: 'Homeware', price: 10, slug: 'mine' },
+    body: { title: 'Slug Squatter', description: 'x', category: 'Home & Garden', price: 10, slug: 'mine' },
   });
   check('client-supplied slug -> 400', withSlug.status === 400, `got ${withSlug.status}`);
 
   const badSale = await request('post', '/product', {
     cookie: cookieA,
-    body: { title: 'Bad Sale', description: 'x', category: 'Homeware', price: 10, salePrice: 15 },
+    body: { title: 'Bad Sale', description: 'x', category: 'Home & Garden', price: 10, salePrice: 15 },
   });
   check('salePrice >= price -> 400', badSale.status === 400, `got ${badSale.status}`);
 
@@ -523,7 +525,7 @@ async function main() {
     body: {
       title: 'Stuffed',
       description: 'x',
-      category: 'Homeware',
+      category: 'Home & Garden',
       price: 10,
       tags: Array.from({ length: 21 }, (_, i) => `t${i}`),
     },

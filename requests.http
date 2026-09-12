@@ -99,6 +99,25 @@ Content-Type: application/json
   "otp": "123456"
 }
 
+### Create shop - 201 first time; 200 when resubmitting a REJECTED shop
+POST {{seller}}/shop
+Content-Type: application/json
+
+{
+  "name": "Kai Ceramics",
+  "category": "Handmade",
+  "address": "1 Test Street",
+  "bio": "Handmade ceramics, fired in small batches.",
+  "openingHours": "Mon-Fri, 9am-6pm",
+  "website": "https://example.com",
+  "socialLinks": {
+    "instagram": "https://instagram.com/kaiceramics"
+  }
+}
+
+### Get my shop - 404 until one exists
+GET {{seller}}/shop
+
 ### Seller login
 POST {{seller}}/login
 Content-Type: application/json
@@ -152,7 +171,7 @@ Content-Type: application/json
 {
   "title": "Ceramic Mug",
   "description": "A hand-thrown stoneware mug, 300ml.",
-  "category": "Homeware",
+  "category": "Home & Garden",
   "subCategory": "Drinkware",
   "tags": ["ceramic", "handmade", "mug"],
   "price": 24.5,
@@ -200,7 +219,7 @@ Content-Type: application/json
 {
   "title": "Injected",
   "description": "Tries to plant a product in another shop.",
-  "category": "Homeware",
+  "category": "Home & Garden",
   "price": 10,
   "shopId": "REPLACE_WITH_OTHER_SHOP_ID"
 }
@@ -212,7 +231,7 @@ Content-Type: application/json
 {
   "title": "Slug Squatter",
   "description": "Tries to pick its own slug.",
-  "category": "Homeware",
+  "category": "Home & Garden",
   "price": 10,
   "slug": "premium-mug"
 }
@@ -224,7 +243,7 @@ Content-Type: application/json
 {
   "title": "Bad Sale",
   "description": "Sale price is not below price.",
-  "category": "Homeware",
+  "category": "Home & Garden",
   "price": 10,
   "salePrice": 15
 }
@@ -236,7 +255,7 @@ Content-Type: application/json
 {
   "title": "Keyword Stuffed",
   "description": "Too many tags.",
-  "category": "Homeware",
+  "category": "Home & Garden",
   "price": 10,
   "tags": ["t1","t2","t3","t4","t5","t6","t7","t8","t9","t10","t11","t12","t13","t14","t15","t16","t17","t18","t19","t20","t21"]
 }

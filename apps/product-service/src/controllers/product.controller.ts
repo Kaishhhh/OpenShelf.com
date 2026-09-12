@@ -91,6 +91,10 @@ export async function listMyProducts(req: Request, res: Response) {
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { createdAt: 'desc' },
+      // The seller's list renders a thumbnail. Capped at MAX_PRODUCT_IMAGES
+      // rows of three columns each, so this is far cheaper than the per-product
+      // round trip the UI would otherwise have to make.
+      include: { images: { select: IMAGE_SELECT } },
     }),
     prisma.product.count({ where }),
   ]);
@@ -222,10 +226,11 @@ export async function getUploadAuth(req: Request, res: Response) {
   // so signed upload params are never minted for an unapproved shop.
   requireShopId(req);
 
-  // Only token, expire and signature cross this boundary. The private key signs
-  // them server-side and is never part of what the lib returns.
-  const { token, expire, signature } = getImageKitUploadAuth();
-  return res.status(200).json({ token, expire, signature });
+  // publicKey, token, expire and signature cross this boundary — the four form
+  // fields ImageKit's upload endpoint wants. The private key signs them
+  // server-side and is never part of what the lib returns.
+  const { publicKey, token, expire, signature } = getImageKitUploadAuth();
+  return res.status(200).json({ publicKey, token, expire, signature });
 }
 
 export async function addProductImage(req: Request, res: Response) {

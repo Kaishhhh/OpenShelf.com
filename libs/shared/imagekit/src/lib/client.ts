@@ -4,6 +4,7 @@ import type { FileObject } from 'imagekit/dist/libs/interfaces/index.js';
 export type ImageKitFile = FileObject;
 
 export interface UploadAuthParams {
+  publicKey: string;
   token: string;
   expire: number;
   signature: string;
@@ -104,16 +105,26 @@ export function canonicalFileUrl(raw: string): string | null {
 }
 
 /**
- * Short-lived parameters that let a browser upload straight to ImageKit.
+ * Everything a browser needs to upload straight to ImageKit.
  *
  * `signature` is an HMAC of token+expire keyed by the private key — the key is
- * an input to it, never part of the output. The return type is written out in
- * full and the object is built field by field so that a future SDK release
- * adding a fourth field can't silently widen what we hand to a client.
+ * an input to it, never part of the output. `publicKey` is deliberately here:
+ * ImageKit's upload endpoint takes it as a form field, so a browser cannot
+ * upload without it, and it is non-secret by design.
+ *
+ * The return type is written out in full and the object is built field by field
+ * so that a future SDK release adding a field can't *silently* widen what we
+ * hand to a client. Adding one here is a deliberate act, and the specs assert
+ * the exact key set to keep it that way.
  */
 export function getUploadAuth(): UploadAuthParams {
   const { token, expire, signature } = imagekit().getAuthenticationParameters();
-  return { token, expire, signature };
+  return {
+    publicKey: requireEnv('IMAGEKIT_PUBLIC_KEY'),
+    token,
+    expire,
+    signature,
+  };
 }
 
 /**

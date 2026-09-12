@@ -8,7 +8,7 @@ import {
 const validProduct = {
   title: 'Ceramic Mug',
   description: 'A hand-thrown stoneware mug.',
-  category: 'Homeware',
+  category: 'Home & Garden',
   tags: ['ceramic', 'mug'],
   price: 24.5,
   salePrice: 19.99,
@@ -20,6 +20,21 @@ describe('productCreateSchema', () => {
     const result = productCreateSchema.safeParse(validProduct);
     expect(result.success).toBe(true);
   });
+
+  // Shares CATEGORIES with shops; free text here let spellings multiply.
+  it.each(['Homeware', 'electronics', 'Electronis', '', 'Nope'])(
+    'rejects the category %p',
+    (category) => {
+      const result = productCreateSchema.safeParse({
+        ...validProduct,
+        category,
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].path).toEqual(['category']);
+      }
+    }
+  );
 
   it('defaults tags to [] and stock to 0', () => {
     const result = productCreateSchema.parse({

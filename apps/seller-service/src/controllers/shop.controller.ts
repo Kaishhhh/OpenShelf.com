@@ -18,8 +18,34 @@ export async function createShop(req: Request, res: Response) {
   const existingShop = await prisma.shop.findUnique({
     where: { sellerId: seller.id },
   });
+
   if (existingShop) {
-    throw new ValidationError(ALREADY_HAS_SHOP_MESSAGE);
+    // A rejected shop is the seller's to fix and resubmit. A pending one is
+    // waiting on an admin and an approved one is live — neither is theirs to
+    // overwrite, so both keep the original error.
+    if (existingShop.status !== 'REJECTED') {
+      throw new ValidationError(ALREADY_HAS_SHOP_MESSAGE);
+    }
+
+    const resubmitted = await prisma.shop.update({
+      where: { id: existingShop.id },
+      data: {
+        ...data,
+        // Prisma reads `undefined` as "leave unchanged", so an optional the
+        // seller cleared on resubmission would silently keep its old value.
+        // Spell the clearing out instead.
+        bio: data.bio ?? null,
+        openingHours: data.openingHours ?? null,
+        website: data.website ?? null,
+        socialLinks: data.socialLinks ?? null,
+        // Back into the queue, and the old reason no longer applies.
+        status: 'PENDING',
+        rejectionReason: null,
+      },
+    });
+
+    // 200 rather than 201: this updated a shop that already existed.
+    return res.status(200).json(resubmitted);
   }
 
   let shop;

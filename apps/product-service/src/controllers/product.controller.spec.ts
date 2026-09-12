@@ -62,7 +62,7 @@ function makeProduct(over: Partial<FakeProduct> = {}): FakeProduct {
     title: 'Mug',
     slug: 'mug',
     description: 'A mug',
-    category: 'Homeware',
+    category: 'Home & Garden',
     price: 20,
     salePrice: null,
     stock: 5,
@@ -176,7 +176,12 @@ jest.mock('@openshelf/imagekit', () => ({
   },
   getUploadAuth: () => {
     imagekitCalls.push({ method: 'getUploadAuth' });
-    return { token: 'tok-1', expire: 1893456000, signature: 'sig-1' };
+    return {
+      publicKey: 'public_abc',
+      token: 'tok-1',
+      expire: 1893456000,
+      signature: 'sig-1',
+    };
   },
   getFileById: (fileId: string) => {
     imagekitCalls.push({ method: 'getFileById', fileId });
@@ -309,7 +314,7 @@ function mockReq(over: ReqOverrides = {}, shopId: string | null = SHOP_A) {
 const validBody = {
   title: 'Ceramic Mug',
   description: 'A hand-thrown stoneware mug.',
-  category: 'Homeware',
+  category: 'Home & Garden',
   price: 24.5,
 };
 
@@ -601,12 +606,15 @@ describe('getPublicProductBySlug', () => {
 });
 
 describe('getUploadAuth', () => {
-  it('returns exactly token, expire and signature', async () => {
+  it('returns exactly publicKey, token, expire and signature', async () => {
     const res = mockRes();
     await getUploadAuth(mockReq(), res);
     expect(res.statusCode).toBe(200);
+    // publicKey is here on purpose — a browser cannot POST to ImageKit without
+    // it. The private-key assertion below is the one guarding the secret.
     expect(Object.keys(res.body).sort()).toEqual([
       'expire',
+      'publicKey',
       'signature',
       'token',
     ]);

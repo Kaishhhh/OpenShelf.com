@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { CATEGORIES } from './categories';
+import { optionalText } from './field-helpers';
 
 const MAX_TAGS = 20;
 const MAX_TAG_LENGTH = 30;
@@ -16,16 +18,12 @@ const productBaseShape = {
     .trim()
     .min(1, 'Description is required')
     .max(5000, 'Description is too long'),
-  category: z
-    .string()
-    .trim()
-    .min(1, 'Category is required')
-    .max(100, 'Category is too long'),
-  subCategory: z
-    .string()
-    .trim()
-    .max(100, 'Sub-category is too long')
-    .optional(),
+  // Shares one vocabulary with shops — see categories.ts. Free text here would
+  // let 'Electronics', 'electronics' and 'Electronis' become three categories.
+  category: z.enum(CATEGORIES, { message: 'Select a category' }),
+  // Still free text, but blank means absent rather than an empty string, so an
+  // untouched form input does not persist ''.
+  subCategory: optionalText(100, 'Sub-category is too long'),
   // Bounded now rather than later: unbounded tags are a keyword-stuffing
   // vector the moment search exists.
   tags: z
@@ -70,6 +68,15 @@ export const productCreateSchema = z
   });
 
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
+
+/**
+ * What a form holds *before* zod applies the defaults above.
+ *
+ * `tags` and `stock` carry `.default(...)`, so they are optional on the way in
+ * and guaranteed on the way out. A form binds to this side; the submit handler
+ * receives ProductCreateInput.
+ */
+export type ProductCreateFormInput = z.input<typeof productCreateSchema>;
 
 export const productUpdateSchema = z
   .object({

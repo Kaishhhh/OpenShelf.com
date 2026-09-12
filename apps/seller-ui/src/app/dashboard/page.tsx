@@ -51,8 +51,11 @@ export default function DashboardPage() {
             Your shop needs to be created and approved before you can list
             products.
           </p>
-          {/* Placeholder: the setup form lands in the next slice. */}
-          <p className="text-xs text-ink-muted">Shop setup — coming soon</p>
+          <p className="text-sm">
+            <a href="/shop/new" className="text-accent">
+              Set up your shop
+            </a>
+          </p>
         </Panel>
       );
     }
@@ -85,6 +88,11 @@ export default function DashboardPage() {
             No reason was given. Contact support if you think this is a mistake.
           </p>
         )}
+        <p className="text-sm">
+          <a href="/shop/new" className="text-accent">
+            Update and resubmit
+          </a>
+        </p>
       </Panel>
     );
   }
@@ -92,7 +100,12 @@ export default function DashboardPage() {
   return (
     <Panel title={data.name}>
       <p className="text-sm text-ink-muted">
-        Your shop is approved. Product management arrives in the next release.
+        Your shop is approved and visible to buyers.
+      </p>
+      <p className="text-sm">
+        <a href="/products" className="text-accent">
+          Manage products
+        </a>
       </p>
     </Panel>
   );

@@ -39,7 +39,18 @@ export function applyServerError<T extends FieldValues>(
       continue;
     }
 
-    const name = issue.path.join('.') as Path<T>;
+    // An issue inside an array arrives as ['tags', 3], which joins to "tags.3"
+    // — a name no form renders. Drop trailing index segments so it lands on the
+    // field that owns the array.
+    const segments = [...issue.path];
+    while (
+      segments.length > 1 &&
+      typeof segments[segments.length - 1] === 'number'
+    ) {
+      segments.pop();
+    }
+
+    const name = segments.join('.') as Path<T>;
     // Only fields this form actually renders; anything else has nowhere to
     // show and is left to the banner.
     if (!fields.includes(name)) {

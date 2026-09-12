@@ -52,6 +52,21 @@ describe('applyServerError', () => {
     expect(calls).toEqual([{ name: 'root.server', message }]);
   });
 
+  // zod reports a bad array member at ['tags', 3], which would otherwise join
+  // to "tags.3" and match nothing.
+  it('attaches an array-member issue to the field owning the array', () => {
+    const { calls, setError } = collect();
+    const error = new ApiError('Invalid request data', 400, [
+      { path: ['tags', 3], message: 'Each tag must be at most 30 characters' },
+    ]);
+
+    applyServerError<Fields>(error, setError, ['tags'] as never);
+
+    expect(calls).toEqual([
+      { name: 'tags', message: 'Each tag must be at most 30 characters' },
+    ]);
+  });
+
   it('falls back to the banner when a 400 names no rendered field', () => {
     const { calls, setError } = collect();
     const error = new ApiError('Invalid request data', 400, [
