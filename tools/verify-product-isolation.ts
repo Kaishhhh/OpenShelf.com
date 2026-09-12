@@ -223,6 +223,20 @@ async function ikDelete(fileId: string): Promise<void> {
   });
 }
 
+/**
+ * The ids on one page of the public catalogue.
+ *
+ * Membership, never equality: this suite does not own the database, so any other
+ * ACTIVE product legitimately shows up alongside the fixtures.
+ */
+async function publicIds(query = ''): Promise<string[]> {
+  const res = await request('get', `/product/public?limit=100${query}`);
+  if (res.status !== 200) {
+    throw new Error(`GET /product/public failed: ${res.status} ${JSON.stringify(res.data)}`);
+  }
+  return (res.data.products ?? []).map((p: { id: string }) => p.id);
+}
+
 async function imageRowCount(productId: string): Promise<number> {
   return prisma.image.count({ where: { productId } });
 }
@@ -541,12 +555,66 @@ async function main() {
   check('ACTIVE product from an approved shop -> 200', publicOk.status === 200, `got ${publicOk.status}`);
   check('trimmed shop payload, no seller internals', publicOk.status === 200 && publicOk.data.shop?.id !== undefined && publicOk.data.shop?.sellerId === undefined);
 
+  console.log('\nPublic catalogue (no auth)');
+  const listed = await publicIds();
+  check("both shops' ACTIVE products are listed", listed.includes(productA.id) && listed.includes(productB.id));
+
+  const listRes = await request('get', '/product/public?limit=100');
+  const sample = (listRes.data.products ?? []).find((p: { id: string }) => p.id === productA.id);
+  check('rows carry images and a trimmed shop', sample?.images !== undefined && sample?.shop?.name !== undefined);
+  check('  no seller internals anywhere in the payload',
+    !JSON.stringify(listRes.data).includes('sellerId') &&
+    !JSON.stringify(listRes.data).includes('rejectionReason'));
+  check('pagination envelope present', listRes.data.total !== undefined && listRes.data.totalPages !== undefined);
+
+  const byCategory = await publicIds('&category=Home+%26+Garden');
+  check('category filter keeps matching products', byCategory.includes(productA.id));
+  const otherCategory = await publicIds('&category=Books');
+  check('category filter excludes non-matching', !otherCategory.includes(productA.id));
+
+  const byShop = await publicIds(`&shopId=${productA.shopId}`);
+  check('shopId filter scopes to that shop', byShop.includes(productA.id) && !byShop.includes(productB.id));
+
+  // A is 20, B is 30.
+  const cheap = await publicIds('&maxPrice=25');
+  check('maxPrice excludes dearer products', cheap.includes(productA.id) && !cheap.includes(productB.id));
+  const dear = await publicIds('&minPrice=25');
+  check('minPrice excludes cheaper products', !dear.includes(productA.id) && dear.includes(productB.id));
+
+  const badRange = await request('get', '/product/public?minPrice=50&maxPrice=10');
+  check('minPrice above maxPrice -> 400', badRange.status === 400, `got ${badRange.status}`);
+  const badCategory = await request('get', '/product/public?category=Homeware');
+  check('an unknown category -> 400', badCategory.status === 400, `got ${badCategory.status}`);
+  const badShopId = await request('get', '/product/public?shopId=nope');
+  check('a malformed shopId -> 400, not 500', badShopId.status === 400, `got ${badShopId.status}`);
+
+  const asc = await request('get', '/product/public?sort=price-asc&limit=100');
+  const ascPrices = (asc.data.products ?? []).map((p: { price: number }) => p.price);
+  check('sort=price-asc is ascending', ascPrices.every((v: number, i: number) => i === 0 || ascPrices[i - 1] <= v));
+  const desc = await request('get', '/product/public?sort=price-desc&limit=100');
+  const descPrices = (desc.data.products ?? []).map((p: { price: number }) => p.price);
+  check('sort=price-desc is descending', descPrices.every((v: number, i: number) => i === 0 || descPrices[i - 1] >= v));
+
+  console.log('\nPublic shop profile (no auth)');
+  const shopOk = await request('get', `/shop/public/${productA.shopId}`);
+  check('APPROVED shop -> 200', shopOk.status === 200, `got ${shopOk.status}`);
+  check('carries the profile and its products', shopOk.data?.shop?.name !== undefined && Array.isArray(shopOk.data?.products));
+  check("lists only that shop's products", (shopOk.data.products ?? []).every((p: { shopId: string }) => p.shopId === productA.shopId));
+  check('  no seller internals', !JSON.stringify(shopOk.data).includes('sellerId') && !JSON.stringify(shopOk.data).includes('rejectionReason'));
+  check('  and no address', shopOk.data?.shop?.address === undefined);
+  const shopBad = await request('get', '/shop/public/nope');
+  check('a malformed shop id -> 404, not 500', shopBad.status === 404, `got ${shopBad.status}`);
+
   await request('patch', `/product/${productA.id}`, {
     cookie: cookieA,
     body: { status: 'DRAFT' },
   });
   const publicDraft = await request('get', `/product/public/${productA.slug}`);
   check('DRAFT product -> 404', publicDraft.status === 404, `got ${publicDraft.status}`);
+  const draftList = await publicIds();
+  // B must still be there: a query broken badly enough to return nothing would
+  // pass a bare "A is absent" check.
+  check('DRAFT product drops out of the catalogue', !draftList.includes(productA.id) && draftList.includes(productB.id));
 
   await request('patch', `/product/${productA.id}`, {
     cookie: cookieA,
@@ -561,6 +629,10 @@ async function main() {
   });
   const publicPending = await request('get', `/product/public/${productA.slug}`);
   check('product from a PENDING shop -> 404', publicPending.status === 404, `got ${publicPending.status}`);
+  const pendingList = await publicIds();
+  check("a PENDING shop's products leave the catalogue", !pendingList.includes(productA.id) && pendingList.includes(productB.id));
+  const pendingShop = await request('get', `/shop/public/${productA.shopId}`);
+  check('and its public profile -> 404', pendingShop.status === 404, `got ${pendingShop.status}`);
 
   await prisma.shop.update({
     where: { id: productA.shopId },
@@ -568,6 +640,10 @@ async function main() {
   });
   const publicRejected = await request('get', `/product/public/${productA.slug}`);
   check('product from a REJECTED shop -> 404', publicRejected.status === 404, `got ${publicRejected.status}`);
+  const rejectedList = await publicIds();
+  check("a REJECTED shop's products leave the catalogue", !rejectedList.includes(productA.id) && rejectedList.includes(productB.id));
+  const rejectedShop = await request('get', `/shop/public/${productA.shopId}`);
+  check('and its public profile -> 404', rejectedShop.status === 404, `got ${rejectedShop.status}`);
 
   await prisma.shop.update({
     where: { id: productA.shopId },
@@ -597,6 +673,8 @@ async function main() {
 
   const publicDeleted = await request('get', `/product/public/${productA.slug}`);
   check('public GET of a deleted product -> 404', publicDeleted.status === 404, `got ${publicDeleted.status}`);
+  const deletedList = await publicIds();
+  check('a DELETED product leaves the catalogue', !deletedList.includes(productA.id));
 
   const deleteAgain = await request('delete', `/product/${productA.id}`, { cookie: cookieA });
   check('second DELETE -> 404', deleteAgain.status === 404, `got ${deleteAgain.status}`);

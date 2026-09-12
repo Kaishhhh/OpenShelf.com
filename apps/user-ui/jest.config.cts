@@ -5,12 +5,15 @@ const createJestConfig = nextJest({
 });
 
 const config = {
-  displayName: '@org/user-ui',
+  displayName: '@openshelf/user-ui',
   preset: '../../jest.preset.js',
   transform: {
     '^(?!.*\\.(js|jsx|ts|tsx|css|json)$)': '@nx/react/plugins/jest',
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
+  // The '@/' alias from tsconfig — SWC's own resolution is disabled below, so
+  // without this a spec importing '@/lib/...' fails to resolve.
+  moduleNameMapper: { '^@/(.*)$': '<rootDir>/src/$1' },
   coverageDirectory: '../../coverage/apps/user-ui',
   testEnvironment: 'jsdom',
 };

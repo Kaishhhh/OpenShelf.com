@@ -115,6 +115,9 @@ model Product {
 
   @@index([shopId])
   @@index([category, status])
+  // The storefront's default query: every ACTIVE product, newest first. The
+  // compound index above only helps when a category is also supplied.
+  @@index([status, createdAt])
 }
 
 model Image {
@@ -124,6 +127,10 @@ model Image {
 
   productId String?  @db.ObjectId
   product   Product? @relation(fields: [productId], references: [id])
+
+  // Every image query filters on this, and the public list reads images for a
+  // whole page of products at once.
+  @@index([productId])
 }
 
 model Review {

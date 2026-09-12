@@ -80,6 +80,16 @@ app.use(
   })
 );
 
+// Public storefront shop reads, served by product-service. Same suffix rule as
+// '/product' above: Express strips the mount before the proxy sees the request.
+app.use(
+  '/shop',
+  createProxyMiddleware({
+    target: `${PRODUCT_SERVICE_URL}/api/shop`,
+    changeOrigin: true,
+  })
+);
+
 app.use(errorMiddleware);
 
 const port = process.env.PORT || 8080;

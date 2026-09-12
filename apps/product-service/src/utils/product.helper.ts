@@ -5,15 +5,18 @@ export {
   productCreateSchema,
   productUpdateSchema,
   productListQuerySchema,
+  publicProductListQuerySchema,
   productImageCreateSchema,
   type ProductCreateInput,
   type ProductUpdateInput,
   type ProductListQueryInput,
+  type PublicProductListQueryInput,
   type ProductImageCreateInput,
 } from '@openshelf/types';
 
 export const PRODUCT_NOT_FOUND_MESSAGE = 'Product not found';
 export const IMAGE_NOT_FOUND_MESSAGE = 'Image not found';
+export const SHOP_NOT_FOUND_MESSAGE = 'Shop not found';
 
 export const MAX_PRODUCT_IMAGES = 8;
 

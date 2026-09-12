@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import * as path from 'path';
 import { errorMiddleware } from '@openshelf/errors';
 import { productRouter } from './routes/product.router.js';
+import { shopPublicRouter } from './routes/shop-public.router.js';
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.get('/api', (req, res) => {
 });
 
 app.use('/api/product', productRouter);
+app.use('/api/shop', shopPublicRouter);
 
 app.use(errorMiddleware);
 

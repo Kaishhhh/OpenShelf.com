@@ -31,6 +31,7 @@ jest.mock('../controllers/product.controller.js', () => {
     updateProduct: named('updateProduct'),
     deleteProduct: named('deleteProduct'),
     getPublicProductBySlug: named('getPublicProductBySlug'),
+    listPublicProducts: named('listPublicProducts'),
     addProductImage: named('addProductImage'),
     deleteProductImage: named('deleteProductImage'),
   };
@@ -84,6 +85,15 @@ describe('route ordering', () => {
   it('GET /mine reaches listMyProducts', async () => {
     await expect(hit('GET', '/product/mine')).resolves.toMatchObject({
       handler: 'listMyProducts',
+    });
+  });
+
+  // The storefront's catalogue is anonymous. '/:id' sits behind the seller
+  // guards, so a mis-ordering here would not merely route wrongly — it would
+  // answer 401 to every buyer.
+  it('GET /public reaches listPublicProducts, not getProduct', async () => {
+    await expect(hit('GET', '/product/public')).resolves.toMatchObject({
+      handler: 'listPublicProducts',
     });
   });
 

@@ -114,6 +114,46 @@ export const productListQuerySchema = z.object({
 
 export type ProductListQueryInput = z.infer<typeof productListQuerySchema>;
 
+export const PRODUCT_SORTS = ['newest', 'price-asc', 'price-desc'] as const;
+export type ProductSort = (typeof PRODUCT_SORTS)[number];
+
+/**
+ * The storefront's browse query.
+ *
+ * Like productListQuerySchema this is not `.strict()` — an unknown query param from a
+ * shared link is stripped rather than turned into a 400.
+ *
+ * Note that minPrice/maxPrice and the price sorts all act on `price`, not on the
+ * effective price a buyer would pay: a product with a salePrice still sorts and filters
+ * by its full price.
+ */
+export const publicProductListQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).optional().default(1),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+    category: z.enum(CATEGORIES).optional(),
+    minPrice: z.coerce.number().nonnegative('Minimum price cannot be negative').optional(),
+    maxPrice: z.coerce.number().nonnegative('Maximum price cannot be negative').optional(),
+    // Checked here so a malformed id is a 400 rather than the P2023 Prisma would
+    // otherwise raise as a 500.
+    shopId: z
+      .string()
+      .regex(/^[0-9a-f]{24}$/i, 'Invalid shop id')
+      .optional(),
+    sort: z.enum(PRODUCT_SORTS).optional().default('newest'),
+  })
+  .refine(
+    (q) =>
+      q.minPrice === undefined ||
+      q.maxPrice === undefined ||
+      q.minPrice <= q.maxPrice,
+    { message: 'Minimum price cannot exceed maximum price', path: ['minPrice'] }
+  );
+
+export type PublicProductListQueryInput = z.infer<
+  typeof publicProductListQuerySchema
+>;
+
 // The browser uploads straight to ImageKit and posts back what it got. Neither
 // field is trusted: the server re-fetches the file by id and stores ImageKit's
 // own url. The charset guard is load-bearing rather than cosmetic — fileId is

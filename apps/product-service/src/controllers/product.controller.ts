@@ -18,11 +18,13 @@ import {
   MAX_IMAGE_BYTES,
   MAX_PRODUCT_IMAGES,
   PRODUCT_NOT_FOUND_MESSAGE,
+  SHOP_NOT_FOUND_MESSAGE,
   parseObjectId,
   parseOrThrow,
   productCreateSchema,
   productImageCreateSchema,
   productListQuerySchema,
+  publicProductListQuerySchema,
   productUpdateSchema,
   randomSlugSuffix,
   slugify,
@@ -328,6 +330,132 @@ export async function deleteProductImage(req: Request, res: Response) {
   await prisma.image.delete({ where: { id: image.id } });
 
   return res.status(200).json({ id: image.id });
+}
+
+/**
+ * What a buyer is allowed to see of a shop, alongside a product.
+ *
+ * The raw Shop row carries sellerId, rejectionReason, address and socialLinks. Nothing
+ * here may be built by spreading it — every public response projects explicitly.
+ */
+const PUBLIC_SHOP_CARD = { id: true, name: true, category: true } as const;
+
+/**
+ * The full public profile of a shop. Deliberately omits address (the seller's own),
+ * sellerId, rejectionReason and status.
+ */
+const PUBLIC_SHOP_PROFILE = {
+  id: true,
+  name: true,
+  bio: true,
+  category: true,
+  avatar: true,
+  coverBanner: true,
+  openingHours: true,
+  website: true,
+  socialLinks: true,
+  ratings: true,
+  createdAt: true,
+} as const;
+
+const SORT_ORDER = {
+  newest: { createdAt: 'desc' },
+  'price-asc': { price: 'asc' },
+  'price-desc': { price: 'desc' },
+} as const;
+
+/**
+ * Everything a buyer may browse: ACTIVE products belonging to APPROVED shops.
+ *
+ * Both halves of that rule live in the `where`, not in a post-fetch filter like
+ * getPublicProductBySlug's. Filtering after the query would run skip/take over rows that
+ * are then discarded, returning short pages and a `total` that disagrees with them.
+ */
+export async function listPublicProducts(req: Request, res: Response) {
+  const { page, limit, category, minPrice, maxPrice, shopId, sort } =
+    parseOrThrow(publicProductListQuerySchema, req.query);
+
+  const where = {
+    status: 'ACTIVE' as const,
+    shop: { is: { status: 'APPROVED' as const } },
+    ...(category ? { category } : {}),
+    ...(shopId ? { shopId } : {}),
+    ...(minPrice !== undefined || maxPrice !== undefined
+      ? {
+          price: {
+            ...(minPrice !== undefined ? { gte: minPrice } : {}),
+            ...(maxPrice !== undefined ? { lte: maxPrice } : {}),
+          },
+        }
+      : {}),
+  };
+
+  const [products, total] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: SORT_ORDER[sort],
+      include: {
+        images: { select: IMAGE_SELECT },
+        shop: { select: PUBLIC_SHOP_CARD },
+      },
+    }),
+    prisma.product.count({ where }),
+  ]);
+
+  return res.status(200).json({
+    products,
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
+}
+
+/**
+ * A shop's public profile and its ACTIVE products.
+ *
+ * A shop that is PENDING, REJECTED or absent all 404 identically — the same uniform
+ * answer the product endpoints give, so nothing here reveals that a shop exists but is
+ * awaiting review.
+ */
+export async function getPublicShop(req: Request, res: Response) {
+  const id = parseObjectId(req.params.id, SHOP_NOT_FOUND_MESSAGE);
+  const { page, limit, sort } = parseOrThrow(
+    publicProductListQuerySchema,
+    req.query
+  );
+
+  const shop = await prisma.shop.findFirst({
+    where: { id, status: 'APPROVED' },
+    select: PUBLIC_SHOP_PROFILE,
+  });
+  if (!shop) {
+    throw new NotFoundError(SHOP_NOT_FOUND_MESSAGE);
+  }
+
+  const where = { shopId: id, status: 'ACTIVE' as const };
+
+  const [products, total] = await Promise.all([
+    prisma.product.findMany({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: SORT_ORDER[sort],
+      include: { images: { select: IMAGE_SELECT } },
+    }),
+    prisma.product.count({ where }),
+  ]);
+
+  return res.status(200).json({
+    shop,
+    products,
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
 }
 
 export async function getPublicProductBySlug(req: Request, res: Response) {

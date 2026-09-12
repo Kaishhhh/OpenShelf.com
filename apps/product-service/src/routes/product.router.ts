@@ -10,6 +10,7 @@ import {
   deleteProductImage,
   getProduct,
   getPublicProductBySlug,
+  listPublicProducts,
   getUploadAuth,
   listMyProducts,
   updateProduct,
@@ -22,6 +23,11 @@ const sellerOnly = [isSellerAuthenticated, requireApprovedShop];
 // Route order matters: '/public/:slug', '/mine' and '/upload-auth' are
 // literal-prefixed and must be registered before '/:id', which would otherwise
 // match them first.
+// A bare '/public' MUST stay above '/:id' below: '/:id' is a single-segment
+// param wrapped in sellerOnly, so it would swallow this literal and answer 401
+// to anonymous visitors rather than 404. '/public/:slug' is two segments and
+// cannot shadow it in either order.
+productRouter.get('/public', listPublicProducts);
 productRouter.get('/public/:slug', getPublicProductBySlug);
 
 productRouter.post('/', ...sellerOnly, createProduct);
