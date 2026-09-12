@@ -47,6 +47,12 @@
     },
     {
       "path": "./libs/shared/imagekit"
+    },
+    {
+      "path": "./apps/seller-ui"
+    },
+    {
+      "path": "./libs/shared/email"
     }
   ],
   "compilerOptions": {}

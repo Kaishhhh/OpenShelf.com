@@ -19,6 +19,12 @@ enum ProductStatus {
   DELETED
 }
 
+enum ShopStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   name          String
@@ -72,7 +78,9 @@ model Shop {
   website      String?
   socialLinks  Json?
   ratings      Float     @default(0)
-  isApproved   Boolean   @default(false)
+  status       ShopStatus @default(PENDING)
+  // Optional detail on a REJECTED shop; never the signal that a rejection
+  // happened — that is `status` alone.
   rejectionReason String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

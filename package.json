@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "nx run-many -t serve dev --projects=@openshelf/api-gateway,@openshelf/auth-service,@openshelf/seller-service,@openshelf/admin-service,@openshelf/product-service,@openshelf/user-ui",
+    "dev": "nx run-many -t serve dev --projects=@openshelf/api-gateway,@openshelf/auth-service,@openshelf/seller-service,@openshelf/admin-service,@openshelf/product-service,@openshelf/user-ui,@openshelf/seller-ui",
     "prisma:generate": "prisma generate --schema=libs/prisma/prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=libs/prisma/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=libs/prisma/prisma/schema.prisma",
@@ -91,6 +91,7 @@
     "postcss": "^8.5.25",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "resend": "^6.28.0",
     "tailwindcss": "^4.3.3",
     "zod": "^4.4.3"
   }

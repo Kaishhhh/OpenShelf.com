@@ -16,7 +16,9 @@ export async function requireApprovedShop(
     where: { sellerId: seller.id },
   });
 
-  if (!shop || !shop.isApproved) {
+  // PENDING and REJECTED are both refused, and so is a missing shop — one
+  // message for all three, so this never reveals which case applies.
+  if (!shop || shop.status !== 'APPROVED') {
     throw new ForbiddenError('Shop not found or not approved');
   }
 

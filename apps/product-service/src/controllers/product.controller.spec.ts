@@ -4,7 +4,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '@openshelf/errors';
-import { Prisma } from '@prisma/client';
+import { Prisma, type ShopStatus } from '@prisma/client';
 
 const SHOP_A = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const SHOP_B = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -31,7 +31,7 @@ interface FakeShop {
   name: string;
   avatar: string | null;
   ratings: number;
-  isApproved: boolean;
+  status: ShopStatus;
 }
 
 interface WhereClause {
@@ -98,14 +98,14 @@ const shops: Record<string, FakeShop> = {
     name: 'Shop A',
     avatar: null,
     ratings: 4.5,
-    isApproved: true,
+    status: 'APPROVED',
   },
   [SHOP_B]: {
     id: SHOP_B,
     name: 'Shop B',
     avatar: null,
     ratings: 4.0,
-    isApproved: true,
+    status: 'APPROVED',
   },
 };
 
@@ -166,13 +166,25 @@ let deleteFileImpl: (fileId: string) => Promise<void>;
 const imagekitCalls: { method: string; fileId?: string }[] = [];
 
 jest.mock('@openshelf/imagekit', () => ({
+  canonicalFileUrl: (raw: string) => {
+    try {
+      const u = new URL(raw);
+      return `${u.origin}${u.pathname}`;
+    } catch {
+      return null;
+    }
+  },
   getUploadAuth: () => {
     imagekitCalls.push({ method: 'getUploadAuth' });
     return { token: 'tok-1', expire: 1893456000, signature: 'sig-1' };
   },
   getFileById: (fileId: string) => {
     imagekitCalls.push({ method: 'getFileById', fileId });
-    return Promise.resolve(remoteFiles[fileId] ?? null);
+    const file = remoteFiles[fileId];
+    if (!file) return Promise.resolve(null);
+    // getFileDetails appends a cache-buster the upload response does not have;
+    // returning the identical string here would hide the real mismatch.
+    return Promise.resolve({ ...file, url: `${file.url}?updatedAt=1788184520647` });
   },
   deleteFile: (fileId: string) => {
     imagekitCalls.push({ method: 'deleteFile', fileId });
@@ -307,8 +319,8 @@ beforeEach(() => {
     makeProduct({ id: PRODUCT_B, shopId: SHOP_B, title: 'Bowl', slug: 'bowl' }),
   ];
   calls.length = 0;
-  shops[SHOP_A].isApproved = true;
-  shops[SHOP_B].isApproved = true;
+  shops[SHOP_A].status = 'APPROVED';
+  shops[SHOP_B].status = 'APPROVED';
 
   images = [
     { id: IMAGE_A, fileId: FILE_A, url: `${CDN}/a.jpg`, productId: PRODUCT_A },
@@ -565,8 +577,17 @@ describe('getPublicProductBySlug', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('does not leak a product from an unapproved shop', async () => {
-    shops[SHOP_A].isApproved = false;
+  it('does not leak a product from a shop still pending review', async () => {
+    shops[SHOP_A].status = 'PENDING';
+    await expect(
+      getPublicProductBySlug(mockReq({ params: { slug: 'mug' } }, null), mockRes())
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  // Distinct from PENDING: before ShopStatus existed both were isApproved
+  // false, so this case could not be expressed separately.
+  it('does not leak a product from a rejected shop', async () => {
+    shops[SHOP_A].status = 'REJECTED';
     await expect(
       getPublicProductBySlug(mockReq({ params: { slug: 'mug' } }, null), mockRes())
     ).rejects.toBeInstanceOf(NotFoundError);
@@ -857,5 +878,85 @@ describe('deleteProduct image cleanup', () => {
     });
     await deleteProduct(mockReq({ params: { id: PRODUCT_A } }), mockRes());
     expect(images).toEqual([expect.objectContaining({ productId: PRODUCT_B })]);
+  });
+});
+
+// Regression cover for the two live-API mismatches that unit tests with an
+// over-idealised fake had missed.
+describe('addProductImage against real ImageKit response shapes', () => {
+  const body = { fileId: 'file_new', url: `${CDN}/new.jpg` };
+
+  it('accepts the bare upload url even though getFileDetails adds ?updatedAt', async () => {
+    const res = mockRes();
+    await addProductImage(mockReq({ params: { id: PRODUCT_A }, body }), res);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('persists the url without the cache-buster, so ?tr= can be appended', async () => {
+    await addProductImage(
+      mockReq({ params: { id: PRODUCT_A }, body }),
+      mockRes()
+    );
+    const stored = images[1].url;
+    expect(stored).toBe(`${CDN}/new.jpg`);
+    expect(stored).not.toContain('updatedAt');
+    expect(stored).not.toContain('?');
+  });
+
+  it('still rejects a foreign host despite the normalisation', async () => {
+    await expect(
+      addProductImage(
+        mockReq({
+          params: { id: PRODUCT_A },
+          body: { fileId: 'file_new', url: 'https://evil.example.com/new.jpg' },
+        }),
+        mockRes()
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(images).toHaveLength(1);
+  });
+
+  it('still rejects a different path on the right host', async () => {
+    await expect(
+      addProductImage(
+        mockReq({
+          params: { id: PRODUCT_A },
+          body: { fileId: 'file_new', url: `${CDN}/somethingelse.jpg` },
+        }),
+        mockRes()
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(images).toHaveLength(1);
+  });
+
+  it('still rejects another ImageKit account on the same host', async () => {
+    await expect(
+      addProductImage(
+        mockReq({
+          params: { id: PRODUCT_A },
+          body: {
+            fileId: 'file_new',
+            url: 'https://ik.imagekit.io/someoneelse/new.jpg',
+          },
+        }),
+        mockRes()
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(images).toHaveLength(1);
+  });
+
+  // A client cannot smuggle a redirect or tracker in via the query, because
+  // the query is dropped on both sides before comparison and never persisted.
+  it('ignores a query the client appends, rather than storing it', async () => {
+    const res = mockRes();
+    await addProductImage(
+      mockReq({
+        params: { id: PRODUCT_A },
+        body: { fileId: 'file_new', url: `${CDN}/new.jpg?tr=e-bgremove` },
+      }),
+      res
+    );
+    expect(res.statusCode).toBe(201);
+    expect(images[1].url).toBe(`${CDN}/new.jpg`);
   });
 });

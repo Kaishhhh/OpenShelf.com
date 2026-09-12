@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+/**
+ * Mirrors the Prisma `ShopStatus` enum. Declared here so clients can name the
+ * states without pulling in @prisma/client, the same way product.schemas.ts
+ * mirrors ProductStatus.
+ */
+export const SHOP_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
+export type ShopStatus = (typeof SHOP_STATUSES)[number];
+
 const shopSocialLinksSchema = z
   .object({
     instagram: z.string().trim().url('Invalid URL').optional(),
@@ -45,7 +53,10 @@ export const shopRejectSchema = z.object({
 export type ShopRejectInput = z.infer<typeof shopRejectSchema>;
 
 export const shopModerationQuerySchema = z.object({
-  status: z.enum(['pending', 'approved', 'all']).optional().default('all'),
+  status: z
+    .enum(['pending', 'approved', 'rejected', 'all'])
+    .optional()
+    .default('all'),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });

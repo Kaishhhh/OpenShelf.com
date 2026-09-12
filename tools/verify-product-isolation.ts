@@ -125,7 +125,7 @@ async function seed() {
         category: 'Homeware',
         address: '1 Test Street',
         sellerId: seller.id,
-        isApproved: true,
+        status: 'APPROVED',
       },
     });
   }
@@ -288,6 +288,9 @@ async function verifyImages(cookieA: string, cookieB: string): Promise<void> {
   });
   check('seller A attaches their own upload -> 201', attach.status === 201, `got ${attach.status} ${JSON.stringify(attach.data)}`);
   check('the stored url is the ImageKit url', attach.data?.url === uploaded.url, `got ${attach.data?.url}`);
+  // getFileDetails returns this url with a ?updatedAt cache-buster appended;
+  // what is persisted must be the bare form so ?tr=... can be appended to it.
+  check('the stored url carries no query string', !String(attach.data?.url ?? '').includes('?'), `got ${attach.data?.url}`);
 
   const imageId: string = attach.data?.id;
 
@@ -299,12 +302,25 @@ async function verifyImages(cookieA: string, cookieB: string): Promise<void> {
   check('seller B attaching to A’s product -> 404 (not 403)', crossShop.status === 404, `got ${crossShop.status}`);
   check('and no row was created for it', (await imageRowCount(productAId)) === 1, 'row count changed');
 
-  const forged = await request('post', `/product/${productAId}/images`, {
+  // ImageKit answers these two differently -- a malformed id is a 400
+  // ("invalid fileId parameter"), a well-formed one naming nothing is a 404
+  // ("The requested file does not exist.") -- and both have to read as a
+  // rejected forgery rather than an upstream failure.
+  const malformed = await request('post', `/product/${productAId}/images`, {
     cookie: cookieA,
     body: { fileId: 'forgedfileid0000000000', url: uploaded.url },
   });
-  check('a forged fileId -> 400', forged.status === 400, `got ${forged.status}`);
-  check('and nothing landed in the Image collection', (await imageRowCount(productAId)) === 1, 'row count changed');
+  check('a malformed fileId (ImageKit 400) -> 400', malformed.status === 400, `got ${malformed.status}`);
+  check('  and not a 500', malformed.status !== 500, `got ${malformed.status}`);
+
+  const absent = await request('post', `/product/${productAId}/images`, {
+    cookie: cookieA,
+    body: { fileId: '000000000000000000000000', url: uploaded.url },
+  });
+  check('a well-formed but unknown fileId (ImageKit 404) -> 400', absent.status === 400, `got ${absent.status}`);
+  check('  and not a 500', absent.status !== 500, `got ${absent.status}`);
+
+  check('neither forgery landed in the Image collection', (await imageRowCount(productAId)) === 1, 'row count changed');
 
   const wrongUrl = await request('post', `/product/${productAId}/images`, {
     cookie: cookieA,
@@ -535,16 +551,25 @@ async function main() {
     body: { status: 'ACTIVE' },
   });
 
-  // unapproved shop
+  // Neither non-approved state may expose the product, and they are separate
+  // rows in this table only because ShopStatus replaced the isApproved boolean.
   await prisma.shop.update({
     where: { id: productA.shopId },
-    data: { isApproved: false },
+    data: { status: 'PENDING' },
   });
-  const publicUnapproved = await request('get', `/product/public/${productA.slug}`);
-  check('product from an unapproved shop -> 404', publicUnapproved.status === 404, `got ${publicUnapproved.status}`);
+  const publicPending = await request('get', `/product/public/${productA.slug}`);
+  check('product from a PENDING shop -> 404', publicPending.status === 404, `got ${publicPending.status}`);
+
   await prisma.shop.update({
     where: { id: productA.shopId },
-    data: { isApproved: true },
+    data: { status: 'REJECTED', rejectionReason: 'Incomplete address' },
+  });
+  const publicRejected = await request('get', `/product/public/${productA.slug}`);
+  check('product from a REJECTED shop -> 404', publicRejected.status === 404, `got ${publicRejected.status}`);
+
+  await prisma.shop.update({
+    where: { id: productA.shopId },
+    data: { status: 'APPROVED', rejectionReason: null },
   });
 
   // --- images -------------------------------------------------------------

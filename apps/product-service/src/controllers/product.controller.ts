@@ -8,6 +8,7 @@ import {
 } from '@openshelf/errors';
 import { prisma } from '@openshelf/prisma';
 import {
+  canonicalFileUrl,
   deleteFile,
   getFileById,
   getUploadAuth as getImageKitUploadAuth,
@@ -271,14 +272,23 @@ export async function addProductImage(req: Request, res: Response) {
     );
   }
 
-  // A valid fileId paired with a url pointing anywhere else is still a forgery.
-  if (file.url !== url) {
+  // A valid fileId paired with a url pointing anywhere else is still a forgery,
+  // so the two are still compared — but on origin+path, not as raw strings.
+  // getFileDetails appends a `?updatedAt=<ms>` cache-buster that the upload
+  // response the client is echoing back does not have, so the raw strings never
+  // match even when both name the same file.
+  const canonical = canonicalFileUrl(file.url);
+  if (!canonical) {
+    throw new AppError('ImageKit returned an unparseable url', 502);
+  }
+  if (canonical !== canonicalFileUrl(url)) {
     throw new ValidationError('url does not match the uploaded file');
   }
 
-  // ImageKit's own strings are what get persisted, never the client's.
+  // ImageKit's own url is what gets persisted, never the client's, and without
+  // the cache-buster so that `?tr=...` can be appended to it directly.
   const image = await prisma.image.create({
-    data: { fileId: file.fileId, url: file.url, productId: id },
+    data: { fileId: file.fileId, url: canonical, productId: id },
     select: IMAGE_SELECT,
   });
 
@@ -323,9 +333,10 @@ export async function getPublicProductBySlug(req: Request, res: Response) {
     include: { shop: true, images: { select: IMAGE_SELECT } },
   });
 
-  // DRAFT and DELETED are excluded by the status filter; an unapproved shop is
-  // excluded here. All three produce the same 404 as a slug that doesn't exist.
-  if (!product || !product.shop?.isApproved) {
+  // DRAFT and DELETED are excluded by the status filter; a shop that is not
+  // APPROVED — PENDING or REJECTED — is excluded here. All of them produce the
+  // same 404 as a slug that doesn't exist.
+  if (!product || product.shop?.status !== 'APPROVED') {
     throw new NotFoundError(PRODUCT_NOT_FOUND_MESSAGE);
   }
 

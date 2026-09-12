@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
 import { NotFoundError } from '@openshelf/errors';
 import { prisma } from '@openshelf/prisma';
-import { shopModerationQuerySchema, shopRejectSchema } from '@openshelf/types';
+import {
+  shopModerationQuerySchema,
+  shopRejectSchema,
+  type ShopStatus,
+} from '@openshelf/types';
 import { parseOrThrow } from '../utils/admin-auth.helper.js';
 
 export async function listShops(req: Request, res: Response) {
@@ -10,12 +14,12 @@ export async function listShops(req: Request, res: Response) {
     req.query
   );
 
+  // The query takes lowercase names; ShopStatus is uppercase. 'all' is the
+  // only value that is not a status, so it is the only special case.
   const where =
-    status === 'pending'
-      ? { isApproved: false }
-      : status === 'approved'
-      ? { isApproved: true }
-      : {};
+    status === 'all'
+      ? {}
+      : { status: status.toUpperCase() as ShopStatus };
 
   const [shops, total] = await Promise.all([
     prisma.shop.findMany({
@@ -46,7 +50,9 @@ export async function approveShop(req: Request, res: Response) {
 
   const updated = await prisma.shop.update({
     where: { id: shop.id },
-    data: { isApproved: true, rejectionReason: null },
+    // Clearing the reason keeps a re-approved shop from carrying the note
+    // that explained an earlier rejection.
+    data: { status: 'APPROVED', rejectionReason: null },
   });
 
   return res.status(200).json(updated);
@@ -63,7 +69,7 @@ export async function rejectShop(req: Request, res: Response) {
 
   const updated = await prisma.shop.update({
     where: { id: shop.id },
-    data: { isApproved: false, rejectionReason: reason ?? null },
+    data: { status: 'REJECTED', rejectionReason: reason ?? null },
   });
 
   return res.status(200).json(updated);
