@@ -4,9 +4,11 @@ import { ValidationError } from '@openshelf/errors';
 export {
   registerSchema,
   verifyOtpSchema,
+  resendOtpSchema,
   loginSchema,
   type RegisterInput,
   type VerifyOtpInput,
+  type ResendOtpInput,
   type LoginInput,
 } from '@openshelf/types';
 

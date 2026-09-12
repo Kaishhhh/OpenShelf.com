@@ -10,7 +10,7 @@ const swcJestConfig = JSON.parse(
 swcJestConfig.swcrc = false;
 
 module.exports = {
-  displayName: '@openshelf/errors',
+  displayName: '@openshelf/email',
   preset: '../../../jest.preset.js',
   testEnvironment: 'node',
   transform: {
@@ -18,5 +18,4 @@ module.exports = {
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
   coverageDirectory: 'test-output/jest/coverage',
-  passWithNoTests: true,
 };

@@ -56,7 +56,7 @@ Multi-vendor ecommerce SaaS. Nx monorepo, Express microservices, Next.js fronten
 - Do not leave `nx serve` running after verifying a change — stop it (Ctrl+C)
   before ending the task. Orphaned processes cause EADDRINUSE on the next run.
 - Ports: gateway 8080, auth 6001, product 6002, seller 6003, order 6004,
-  notification 6005, recommender 6006. Frontends: user-ui 3000, seller-ui 3001,
+  notification 6005, recommender 6006, admin 6007. Frontends: user-ui 3000, seller-ui 3001,
   admin-ui 3002.
 
 ## Infrastructure
@@ -69,3 +69,17 @@ Multi-vendor ecommerce SaaS. Nx monorepo, Express microservices, Next.js fronten
   @openshelf/* libs — they resolve to raw .ts with .js-suffixed relative
   imports that Node won't follow. Import @prisma/client and other npm
   packages directly instead.
+
+  - Killing the `npm run dev` parent does NOT stop the services — all six
+  node processes survive as orphans holding their ports. Use Ctrl+C in
+  the terminal, or kill by PID.
+
+## Secrets
+- Never cat, diff, or print .env in full. Grep for the specific key you
+  need to verify (e.g. `grep SELLER_UI_URL .env`). Terminal output is
+  transcript, and a full dump means rotating every credential.
+
+## Verification
+- Run `nx run-many -t typecheck` alongside test and build. SWC strips types
+  without checking them, so Jest passes on type errors; build skips spec
+  files entirely. Only typecheck catches both.

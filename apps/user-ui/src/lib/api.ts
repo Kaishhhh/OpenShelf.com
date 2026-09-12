@@ -1,4 +1,9 @@
-import type { LoginInput, RegisterInput, VerifyOtpInput } from '@openshelf/types';
+import type {
+  LoginInput,
+  RegisterInput,
+  ResendOtpInput,
+  VerifyOtpInput,
+} from '@openshelf/types';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:6001/api';
@@ -42,6 +47,11 @@ export function registerUser(input: RegisterInput) {
 
 export function verifyOtp(input: VerifyOtpInput) {
   return apiPost<{ message: string }>('/verify-otp', input);
+}
+
+/** Always 200, whether or not a code was actually sent. */
+export function resendOtp(input: ResendOtpInput) {
+  return apiPost<{ message: string }>('/resend-otp', input);
 }
 
 export function loginUser(input: LoginInput) {

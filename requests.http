@@ -13,7 +13,15 @@ Content-Type: application/json
   "password": "password123"
 }
 
-### Verify OTP - paste the code from your terminal
+### Resend OTP - always 200, even for an unknown address or inside the 60s cooldown
+POST {{base}}/resend-otp
+Content-Type: application/json
+
+{
+  "email": "kai4@test.com"
+}
+
+### Verify OTP - the code now arrives by email; on a failed send it is logged instead
 POST {{base}}/verify-otp
 Content-Type: application/json
 
@@ -72,6 +80,14 @@ Content-Type: application/json
   "password": "password123",
   "phoneNumber": "+6582031911",
   "country": "SG"
+}
+
+### Seller resend OTP - always 200, even for an unknown address or inside the cooldown
+POST {{seller}}/resend-otp
+Content-Type: application/json
+
+{
+  "email": "seller1@test.com"
 }
 
 ### Seller verify

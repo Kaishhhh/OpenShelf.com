@@ -8,28 +8,33 @@ import {
   REFRESH_TOKEN_MAX_AGE_MS,
   REFRESH_TOKEN_TTL_SECONDS,
   TOO_MANY_ATTEMPTS_MESSAGE,
+  assertCanIssueOtp,
+  assertNotOtpLocked,
   checkAndBumpLoginAttempts,
   clearAuthCookies,
   clearLoginAttempts,
+  clearOtpAttempts,
   comparePassword,
   consumeOtp,
   cookieFlags,
   deleteAllRefreshTokensForUser,
+  getPendingRegistration,
   hashPassword,
+  isOtpCoolingDown,
   issueOtp,
   loginLockKey,
-  otpCooldownKey,
-  otpLockKey,
   refreshTokenKey,
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
 } from '@openshelf/auth';
+import { sendOtpEmail } from '@openshelf/email';
 import {
   PendingRegistration,
   loginSchema,
   parseOrThrow,
   registerSchema,
+  resendOtpSchema,
   verifyOtpSchema,
 } from '../utils/auth.helper.js';
 
@@ -52,20 +57,55 @@ export async function register(req: Request, res: Response) {
     return res.status(200).json({ message: REGISTER_SUCCESS_MESSAGE });
   }
 
-  if (await redis.exists(otpCooldownKey(NAMESPACE, email))) {
-    throw new RateLimitError('Please wait before requesting another code');
-  }
-  if (await redis.exists(otpLockKey(NAMESPACE, email))) {
-    throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
-  }
+  await assertCanIssueOtp(NAMESPACE, email);
 
   const hashedPassword = await hashPassword(password);
   const pending: PendingRegistration = { name, email, hashedPassword };
   const otp = await issueOtp(NAMESPACE, email, pending);
 
-  // TODO: send `otp` to `email` via the transactional email provider
-  console.log(`[auth-service] TODO send OTP email to ${email}: ${otp}`);
+  // Deliberately not awaited, and sendOtpEmail never throws: the code is already in
+  // Redis, so a slow or broken mail provider must not delay this response or turn a
+  // successful registration into an error. A failed send costs a resend, not the account.
+  void sendOtpEmail({ to: email, code: otp, purpose: 'user' });
 
+  return res.status(200).json({ message: REGISTER_SUCCESS_MESSAGE });
+}
+
+/**
+ * Issues a fresh code for a registration that is already pending.
+ *
+ * Answers the same 200 whether it sent anything or not. Only the lockout is allowed to
+ * look different — see the comment on the final return.
+ */
+export async function resendOtp(req: Request, res: Response) {
+  const { email } = parseOrThrow(resendOtpSchema, req.body);
+
+  // The one case that does answer differently. A lockout is a state the account holder
+  // needs told about, and only their own failed attempts can set it, so it reveals
+  // nothing to someone probing addresses they do not control.
+  await assertNotOtpLocked(NAMESPACE, email);
+
+  const pending = await getPendingRegistration<PendingRegistration>(
+    NAMESPACE,
+    email
+  );
+  const coolingDown = pending && (await isOtpCoolingDown(NAMESPACE, email));
+
+  if (pending && !coolingDown) {
+    // A new code rather than the old one: issueOtp overwrites the OTP, refreshes the
+    // pending blob's TTL and re-arms the cooldown.
+    const otp = await issueOtp(NAMESPACE, email, pending);
+    // Attempts spent against a code the user never received must not count against the
+    // new one.
+    await clearOtpAttempts(NAMESPACE, email);
+
+    void sendOtpEmail({ to: email, code: otp, purpose: 'user' });
+  }
+
+  // One response for all three outcomes — sent, no pending registration, and still
+  // cooling down. Answering 429 for the cooldown would turn this into a probe for which
+  // addresses started registering in the last 60 seconds, and the countdown on /verify
+  // already tells a real user when they can try again.
   return res.status(200).json({ message: REGISTER_SUCCESS_MESSAGE });
 }
 

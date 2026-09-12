@@ -24,13 +24,24 @@ jest.mock('imagekit', () =>
   })
 );
 
-import { deleteFile, getFileById, getUploadAuth, imagekit } from './client.js';
+import {
+  canonicalFileUrl,
+  deleteFile,
+  getFileById,
+  getUploadAuth,
+  imagekit,
+} from './client.js';
 
-/** Shaped like the SDK's own rejections, which carry $ResponseMetadata. */
-function ikError(statusCode: number): Error {
-  return Object.assign(new Error(`ImageKit ${statusCode}`), {
-    $ResponseMetadata: { statusCode, headers: {} },
-  });
+/**
+ * Shaped like the SDK's real rejections, which matter in two ways that an
+ * Error-based fake would hide: they are plain objects rather than Errors, and
+ * a fileId ImageKit will not parse comes back as 400, not 404.
+ *
+ *   malformed id     -> 400 "Your request contains invalid fileId parameter."
+ *   well-formed, absent -> 404 "The requested file does not exist."
+ */
+function ikError(statusCode: number, message = `ImageKit ${statusCode}`) {
+  return { message, help: 'contact support', $ResponseMetadata: { statusCode, headers: {} } };
 }
 
 beforeAll(() => {
@@ -95,14 +106,28 @@ describe('getFileById', () => {
     await expect(getFileById('f1')).resolves.toMatchObject({ fileId: 'f1' });
   });
 
-  it('returns null for a fileId this account cannot see', async () => {
-    fake.getFileDetails.mockRejectedValue(ikError(404));
-    await expect(getFileById('nope')).resolves.toBeNull();
+  it('returns null for a well-formed id naming nothing (404)', async () => {
+    fake.getFileDetails.mockRejectedValue(
+      ikError(404, 'The requested file does not exist.')
+    );
+    await expect(getFileById('000000000000000000000000')).resolves.toBeNull();
   });
 
-  it('rethrows anything that is not a 404', async () => {
-    fake.getFileDetails.mockRejectedValue(ikError(500));
-    await expect(getFileById('f1')).rejects.toThrow('ImageKit 500');
+  // The case that produced a 500 in the field: ImageKit rejects an id it
+  // cannot parse with 400, not 404.
+  it('returns null for a malformed id (400)', async () => {
+    fake.getFileDetails.mockRejectedValue(
+      ikError(400, 'Your request contains invalid fileId parameter.')
+    );
+    await expect(getFileById('forgedfileid00')).resolves.toBeNull();
+  });
+
+  it('rethrows a genuine failure as a real Error', async () => {
+    fake.getFileDetails.mockRejectedValue(ikError(500, 'Internal error'));
+    const err = await getFileById('f1').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain('500');
+    expect(err.message).toContain('Internal error');
   });
 });
 
@@ -114,12 +139,73 @@ describe('deleteFile', () => {
   });
 
   it('treats an already-deleted file as success', async () => {
-    fake.deleteFile.mockRejectedValue(ikError(404));
+    fake.deleteFile.mockRejectedValue(
+      ikError(404, 'The requested file does not exist.')
+    );
     await expect(deleteFile('gone')).resolves.toBeUndefined();
   });
 
-  it('rethrows anything that is not a 404, so the caller keeps its row', async () => {
-    fake.deleteFile.mockRejectedValue(ikError(500));
-    await expect(deleteFile('f1')).rejects.toThrow('ImageKit 500');
+  // A row holding an id ImageKit will not parse could never be cleared if this
+  // threw, since the row is only removed after a successful remote delete.
+  it('treats a malformed id as success rather than stranding the row', async () => {
+    fake.deleteFile.mockRejectedValue(
+      ikError(400, 'Your request contains invalid fileId parameter.')
+    );
+    await expect(deleteFile('bogus')).resolves.toBeUndefined();
+  });
+
+  it('rethrows a genuine failure, so the caller keeps its row', async () => {
+    fake.deleteFile.mockRejectedValue(ikError(500, 'Internal error'));
+    const err = await deleteFile('f1').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toContain('500');
+  });
+});
+
+describe('canonicalFileUrl', () => {
+  const BASE = 'https://ik.imagekit.io/openshelf/folder/mug_AbC123.png';
+
+  it('leaves an upload-response url unchanged', () => {
+    expect(canonicalFileUrl(BASE)).toBe(BASE);
+  });
+
+  // The mismatch that rejected legitimate uploads: getFileDetails returns the
+  // same file with a cache-buster appended.
+  it('strips the ?updatedAt cache-buster getFileDetails appends', () => {
+    expect(canonicalFileUrl(`${BASE}?updatedAt=1788184520647`)).toBe(BASE);
+  });
+
+  it('makes the upload and details forms of one file compare equal', () => {
+    expect(canonicalFileUrl(`${BASE}?updatedAt=1788184520647`)).toBe(
+      canonicalFileUrl(BASE)
+    );
+  });
+
+  it('strips a transformation query too', () => {
+    expect(canonicalFileUrl(`${BASE}?tr=e-bgremove`)).toBe(BASE);
+  });
+
+  // Normalising must not make different files look the same.
+  it('still distinguishes a different host', () => {
+    expect(canonicalFileUrl(BASE)).not.toBe(
+      canonicalFileUrl('https://evil.example.com/folder/mug_AbC123.png')
+    );
+  });
+
+  it('still distinguishes a different path', () => {
+    expect(canonicalFileUrl(BASE)).not.toBe(
+      canonicalFileUrl('https://ik.imagekit.io/openshelf/folder/other.png')
+    );
+  });
+
+  it('still distinguishes a different imagekit account', () => {
+    expect(canonicalFileUrl(BASE)).not.toBe(
+      canonicalFileUrl('https://ik.imagekit.io/someoneelse/folder/mug_AbC123.png')
+    );
+  });
+
+  it('returns null for something that is not a url', () => {
+    expect(canonicalFileUrl('not-a-url')).toBeNull();
+    expect(canonicalFileUrl('')).toBeNull();
   });
 });

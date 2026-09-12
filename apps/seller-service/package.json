@@ -67,6 +67,7 @@
   },
   "dependencies": {
     "@openshelf/auth": "*",
+    "@openshelf/email": "*",
     "@openshelf/errors": "*",
     "@openshelf/middleware": "*",
     "@openshelf/prisma": "*",

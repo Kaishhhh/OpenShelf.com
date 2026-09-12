@@ -13,10 +13,81 @@ import {
   otpLockKey,
   pendingRegKey,
 } from './keys.js';
-import { CODE_INVALID_MESSAGE, TOO_MANY_ATTEMPTS_MESSAGE } from './messages.js';
+import {
+  CODE_INVALID_MESSAGE,
+  COOLDOWN_MESSAGE,
+  TOO_MANY_ATTEMPTS_MESSAGE,
+} from './messages.js';
 
 export function generateOtp(): string {
   return randomInt(100000, 1000000).toString();
+}
+
+/**
+ * Throws when too many wrong codes have locked this address out.
+ *
+ * Separate from the cooldown check because the two are answered differently:
+ * register rejects both with a 429, while resend-otp must absorb a cooldown
+ * silently and only surface the lock. See assertCanIssueOtp.
+ */
+export async function assertNotOtpLocked(
+  ns: string,
+  email: string
+): Promise<void> {
+  if (await redis.exists(otpLockKey(ns, email))) {
+    throw new RateLimitError(TOO_MANY_ATTEMPTS_MESSAGE);
+  }
+}
+
+/** Whether the 60s cooldown is still running. Asking is not an error. */
+export async function isOtpCoolingDown(
+  ns: string,
+  email: string
+): Promise<boolean> {
+  return (await redis.exists(otpCooldownKey(ns, email))) === 1;
+}
+
+/**
+ * The guard register uses: refuse a code while cooling down, and while locked.
+ *
+ * resend-otp deliberately does not use this — it treats the cooldown as a reason to
+ * stay quiet rather than a reason to answer differently.
+ */
+export async function assertCanIssueOtp(
+  ns: string,
+  email: string
+): Promise<void> {
+  if (await isOtpCoolingDown(ns, email)) {
+    throw new RateLimitError(COOLDOWN_MESSAGE);
+  }
+  await assertNotOtpLocked(ns, email);
+}
+
+/**
+ * Reads the pending registration without consuming it.
+ *
+ * consumeOtp is the only other reader and it always deletes, so resending a code needs
+ * this to get the payload back before handing it to issueOtp again.
+ */
+export async function getPendingRegistration<T>(
+  ns: string,
+  email: string
+): Promise<T | null> {
+  const raw = await redis.get(pendingRegKey(ns, email));
+  return raw ? (JSON.parse(raw) as T) : null;
+}
+
+/**
+ * Clears the wrong-code counter.
+ *
+ * A newly issued code deserves a fresh allowance: without this, attempts spent against
+ * a code the user never received would still count toward locking them out.
+ */
+export async function clearOtpAttempts(
+  ns: string,
+  email: string
+): Promise<void> {
+  await redis.del(otpAttemptsKey(ns, email));
 }
 
 export async function issueOtp<T>(

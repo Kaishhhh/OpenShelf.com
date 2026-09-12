@@ -44,6 +44,66 @@ function statusOf(err: unknown): number | undefined {
 }
 
 /**
+ * Whether a rejection means "there is no such file here".
+ *
+ * ImageKit splits that outcome across two status codes, which is easy to get
+ * wrong: a fileId that is not 24 hex characters is rejected as malformed with
+ * 400 ("Your request contains invalid fileId parameter."), while a well-formed
+ * id that names nothing gives 404 ("The requested file does not exist.").
+ *
+ * Callers here only ever ask about an id that arrived from a client, so both
+ * answers mean the same thing — the id does not name a file in this account —
+ * and treating only 404 as absent leaves the 400 to surface as an opaque 500.
+ */
+function isMissingFile(err: unknown): boolean {
+  const status = statusOf(err);
+  return status === 404 || status === 400;
+}
+
+/**
+ * The SDK rejects with a plain object ({ message, help, $ResponseMetadata }),
+ * not an Error — so it carries no stack and reads as "{}" in most logs. Genuine
+ * failures are re-thrown through this to become something a caller can catch,
+ * log and assert on normally.
+ */
+function asError(err: unknown): Error {
+  if (err instanceof Error) {
+    return err;
+  }
+  const status = statusOf(err);
+  const message = (err as { message?: unknown } | null)?.message;
+  const wrapped = new Error(
+    `ImageKit request failed${status ? ` (${status})` : ''}: ${
+      typeof message === 'string' ? message : JSON.stringify(err)
+    }`
+  );
+  return Object.assign(wrapped, { $ResponseMetadata: { statusCode: status } });
+}
+
+/**
+ * The stable form of a file's URL: origin and path, with any query dropped.
+ *
+ * The upload API and the media API disagree about this. An upload responds with
+ * a bare url, while getFileDetails appends a `?updatedAt=<ms>` cache-buster
+ * that changes every time the file is touched — so the two are never equal as
+ * strings even for the same file, and neither is stable over time.
+ *
+ * This is also the form worth persisting: transformations are applied by
+ * appending `?tr=...`, which a stored `?updatedAt=` would turn into a
+ * second-parameter case that callers have to special-case.
+ *
+ * Returns null when the input will not parse as a URL.
+ */
+export function canonicalFileUrl(raw: string): string | null {
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Short-lived parameters that let a browser upload straight to ImageKit.
  *
  * `signature` is an HMAC of token+expire keyed by the private key — the key is
@@ -70,25 +130,26 @@ export async function getFileById(
   try {
     return await imagekit().getFileDetails(fileId);
   } catch (err) {
-    if (statusOf(err) === 404) {
+    if (isMissingFile(err)) {
       return null;
     }
-    throw err;
+    throw asError(err);
   }
 }
 
 /**
- * Deletes a file. A file that is already gone counts as success: treating that
- * as an error would strand the database row that points at it, since callers
- * delete remotely before removing the row.
+ * Deletes a file. A file that is already gone — or whose id ImageKit will not
+ * even parse — counts as success: treating either as an error would strand the
+ * database row that points at it, since callers delete remotely before removing
+ * the row, and no retry could ever clear it.
  */
 export async function deleteFile(fileId: string): Promise<void> {
   try {
     await imagekit().deleteFile(fileId);
   } catch (err) {
-    if (statusOf(err) === 404) {
+    if (isMissingFile(err)) {
       return;
     }
-    throw err;
+    throw asError(err);
   }
 }
