@@ -1,15 +1,25 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { loginSchema, type LoginInput } from '@openshelf/types';
 import { Button, FormField, Input } from '@openshelf/ui';
 import { ApiError, loginUser } from '@/lib/api';
+import { safeReturnTo } from '@/lib/return-to';
+import { CART_KEY } from '@/lib/use-cart';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+
+  // Validated rather than used as given: an unchecked returnTo would turn this page
+  // into an open redirect. See safeReturnTo.
+  const returnTo = safeReturnTo(searchParams.get('returnTo'));
+
   const {
     register,
     handleSubmit,
@@ -25,7 +35,10 @@ export default function LoginPage() {
   >({
     mutationFn: loginUser,
     onSuccess: () => {
-      router.push('/');
+      // The cart was fetched as anonymous before this point, and that 401 is cached.
+      // Without this the header badge stays empty until something else invalidates it.
+      queryClient.invalidateQueries({ queryKey: CART_KEY });
+      router.push(returnTo);
     },
   });
 
@@ -71,5 +84,15 @@ export default function LoginPage() {
         </a>
       </p>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  // useSearchParams needs a Suspense boundary above it — the same trap /verify
+  // already works around.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

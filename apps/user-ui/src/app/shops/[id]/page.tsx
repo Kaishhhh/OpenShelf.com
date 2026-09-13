@@ -1,34 +1,64 @@
-'use client';
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { imagekitUrl } from '@/lib/imagekit-url';
+import { parseFilters } from '@/lib/catalogue-filters';
+import { fetchShop } from '@/lib/server-api';
+import { Pagination } from '@/components/Pagination';
+import { EmptyState, ProductGrid } from '@/components/ProductGrid';
 
-import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
-import { useState } from 'react';
-import { ApiError, getPublicShop, type ShopPage } from '@/lib/api';
-import { EmptyState, Pagination, ProductGrid } from '@/components/ProductGrid';
+export async function generateMetadata({
+  params,
+}: PageProps<'/shops/[id]'>): Promise<Metadata> {
+  const { id } = await params;
+  const data = await fetchShop(id);
 
-export default function ShopProfilePage() {
-  const params = useParams<{ id: string }>();
-  const [page, setPage] = useState(1);
-
-  const { data, error, isPending } = useQuery<ShopPage, ApiError>({
-    queryKey: ['shop', params.id, page],
-    queryFn: () => getPublicShop(params.id, { page }),
-  });
-
-  if (isPending) {
-    return null;
+  if (!data) {
+    return { title: 'Shop not found' };
   }
 
-  // PENDING, REJECTED and missing shops all 404 identically — nothing here
-  // reveals that a shop exists but is awaiting review.
-  if (error) {
-    return (
-      <EmptyState
-        message={
-          error.status === 404 ? 'This shop is not available.' : error.message
-        }
-      />
-    );
+  const { shop } = data;
+  const description =
+    shop.bio?.slice(0, 200) ?? `${shop.name} on OpenShelf — ${shop.category}.`;
+  // The shop's own artwork first, then its newest product as a fallback, so a
+  // shop without an avatar still previews as something.
+  const image = shop.coverBanner ?? shop.avatar ?? data.products[0]?.images?.[0]?.url;
+
+  return {
+    title: `${shop.name} | OpenShelf`,
+    description,
+    openGraph: {
+      title: shop.name,
+      description,
+      type: 'website',
+      ...(image
+        ? {
+            images: [
+              {
+                url: imagekitUrl({ src: image, width: 1200, quality: 80 }),
+                width: 1200,
+                alt: shop.name,
+              },
+            ],
+          }
+        : {}),
+    },
+  };
+}
+
+export default async function ShopProfilePage({
+  params,
+  searchParams,
+}: PageProps<'/shops/[id]'>) {
+  const { id } = await params;
+  // Paging moved from useState into the URL: the server cannot see component
+  // state, and this makes page 2 shareable and back-navigable as a bonus.
+  const { page } = parseFilters(await searchParams);
+  const data = await fetchShop(id, { page });
+
+  // PENDING, REJECTED and missing shops all 404 identically upstream — nothing
+  // here reveals that a shop exists but is awaiting review.
+  if (!data) {
+    notFound();
   }
 
   const { shop } = data;
@@ -68,7 +98,6 @@ export default function ShopProfilePage() {
               page={data.page}
               totalPages={data.totalPages}
               total={data.total}
-              onPage={setPage}
             />
           </>
         )}

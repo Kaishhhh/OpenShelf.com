@@ -1,5 +1,5 @@
 import Image from 'next/image';
-import type { CatalogueProduct } from '@/lib/api';
+import type { CatalogueProduct } from '@/lib/catalogue-types';
 import { Price } from './Price';
 
 /**

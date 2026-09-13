@@ -1,3 +1,7 @@
+'use client';
+
+// A hook: client-only by definition. Marked so importing the package barrel from a
+// server component does not drag React state in with it.
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface Countdown {

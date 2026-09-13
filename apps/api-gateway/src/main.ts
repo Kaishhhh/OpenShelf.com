@@ -44,6 +44,8 @@ const ADMIN_SERVICE_URL =
   process.env.ADMIN_SERVICE_URL || 'http://localhost:6007';
 const PRODUCT_SERVICE_URL =
   process.env.PRODUCT_SERVICE_URL || 'http://localhost:6002';
+const ORDER_SERVICE_URL =
+  process.env.ORDER_SERVICE_URL || 'http://localhost:6004';
 
 app.use(
   '/auth',
@@ -86,6 +88,16 @@ app.use(
   '/shop',
   createProxyMiddleware({
     target: `${PRODUCT_SERVICE_URL}/api/shop`,
+    changeOrigin: true,
+  })
+);
+
+// Back to the bare /api target: order-service mounts its router at /api with
+// unprefixed paths, so /order/cart arrives as /api/cart.
+app.use(
+  '/order',
+  createProxyMiddleware({
+    target: `${ORDER_SERVICE_URL}/api`,
     changeOrigin: true,
   })
 );

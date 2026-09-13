@@ -1,100 +1,80 @@
-'use client';
-
-import { useQuery } from '@tanstack/react-query';
-import Image from 'next/image';
-import { useParams } from 'next/navigation';
-import { useState } from 'react';
-import { Button } from '@openshelf/ui';
-import {
-  ApiError,
-  getPublicProduct,
-  type CatalogueProduct,
-  type ShopCard,
-} from '@/lib/api';
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { imagekitUrl } from '@/lib/imagekit-url';
+import { fetchProduct } from '@/lib/server-api';
+import { AddToCart } from '@/components/AddToCart';
 import { Price } from '@/components/Price';
-import { EmptyState } from '@/components/ProductGrid';
+import { ProductGallery } from '@/components/ProductGallery';
 
-type PublicProduct = CatalogueProduct & { shop: ShopCard };
-
-export default function ProductDetailPage() {
-  const params = useParams<{ slug: string }>();
-
-  const { data, error, isPending } = useQuery<PublicProduct, ApiError>({
-    queryKey: ['product', params.slug],
-    queryFn: () => getPublicProduct(params.slug),
-  });
-
-  if (isPending) {
-    return null;
+/**
+ * Shared by generateMetadata and the page body. Both call fetchProduct with the same URL
+ * and options, which React memoizes for the duration of one render, so this is a single
+ * upstream request rather than two.
+ */
+async function load(slug: string) {
+  const product = await fetchProduct(slug);
+  if (!product) {
+    // A DRAFT or DELETED product, or one whose shop is no longer APPROVED, 404s
+    // upstream. Answering with a real 404 status rather than a 200 carrying an
+    // error panel is what makes it correct for a crawler.
+    notFound();
   }
-
-  // A DRAFT or DELETED product, or one whose shop is no longer approved, is a
-  // 404 here — indistinguishable from a slug that never existed.
-  if (error) {
-    return (
-      <EmptyState
-        message={
-          error.status === 404
-            ? 'This product is not available.'
-            : error.message
-        }
-      />
-    );
-  }
-
-  return <ProductDetail product={data} />;
+  return product;
 }
 
-function ProductDetail({ product }: { product: PublicProduct }) {
-  const [active, setActive] = useState(0);
-  const images = product.images ?? [];
-  const selected = images[active];
+export async function generateMetadata({
+  params,
+}: PageProps<'/products/[slug]'>): Promise<Metadata> {
+  const { slug } = await params;
+  const product = await fetchProduct(slug);
+
+  if (!product) {
+    return { title: 'Product not found' };
+  }
+
+  // Trimmed: a description meta tag is truncated well before this anyway.
+  const description = product.description.slice(0, 200);
+  const image = product.images?.[0];
+
+  return {
+    title: `${product.title} — ${product.shop.name} | OpenShelf`,
+    description,
+    openGraph: {
+      title: product.title,
+      description,
+      type: 'website',
+      // Composed through the same loader the <Image> components use, so ?tr= is
+      // built in exactly one place. Omitted entirely when there is no photo — a
+      // broken og:image is worse than none.
+      ...(image
+        ? {
+            images: [
+              {
+                url: imagekitUrl({
+                  src: image.url,
+                  width: 1200,
+                  quality: 80,
+                }),
+                width: 1200,
+                alt: product.title,
+              },
+            ],
+          }
+        : {}),
+    },
+  };
+}
+
+export default async function ProductDetailPage({
+  params,
+}: PageProps<'/products/[slug]'>) {
+  const { slug } = await params;
+  const product = await load(slug);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <div className="relative aspect-square w-full overflow-hidden rounded-card border border-line bg-line/30">
-            {selected ? (
-              <Image
-                src={selected.url}
-                alt={product.title}
-                fill
-                sizes="(max-width: 768px) 100vw, 560px"
-                className="object-cover"
-                priority
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-ink-muted">
-                No photo
-              </div>
-            )}
-          </div>
-
-          {images.length > 1 && (
-            <div className="grid grid-cols-6 gap-1">
-              {images.map((image, index) => (
-                <button
-                  key={image.id}
-                  type="button"
-                  onClick={() => setActive(index)}
-                  aria-label={`Photo ${index + 1}`}
-                  className={`relative aspect-square overflow-hidden rounded-card border ${
-                    index === active ? 'border-accent' : 'border-line'
-                  }`}
-                >
-                  <Image
-                    src={image.url}
-                    alt=""
-                    fill
-                    sizes="96px"
-                    className="object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <ProductGallery images={product.images ?? []} title={product.title} />
 
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
@@ -134,11 +114,13 @@ function ProductDetail({ product }: { product: PublicProduct }) {
             </div>
           )}
 
-          {/* No cart yet — present so the page reads complete, disabled so it
-              cannot imply a capability that does not exist. */}
-          <Button type="button" disabled title="Coming soon">
-            Add to cart
-          </Button>
+          {/* The only client island on this page — everything above it is
+              server-rendered so a crawler sees the real product. */}
+          <AddToCart
+            productId={product.id}
+            slug={product.slug}
+            stock={product.stock}
+          />
 
           <p className="border-t border-line pt-3 text-sm text-ink-muted">
             Sold by{' '}

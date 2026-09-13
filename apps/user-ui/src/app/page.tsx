@@ -1,15 +1,20 @@
-'use client';
-
-import { useQuery } from '@tanstack/react-query';
 import { CATEGORIES } from '@openshelf/types';
-import { ApiError, listPublicProducts, type CataloguePage } from '@/lib/api';
+import { fetchRecentProducts } from '@/lib/server-api';
 import { EmptyState, ProductGrid } from '@/components/ProductGrid';
 
-export default function LandingPage() {
-  const { data, error, isPending } = useQuery<CataloguePage, ApiError>({
-    queryKey: ['catalogue', { recent: true }],
-    queryFn: () => listPublicProducts({ limit: 8, sort: 'newest' }),
-  });
+/**
+ * Rendered per request rather than prerendered at build time.
+ *
+ * With no dynamic params this route is otherwise a static candidate, which would make
+ * `nx build` fetch from product-service — a build that fails when the service is not
+ * running, and bakes whatever it found into the HTML. The work is still cached: the
+ * fetch carries a 60s revalidate, so a request here is a cache read rather than a
+ * database query.
+ */
+export const dynamic = 'force-dynamic';
+
+export default async function LandingPage() {
+  const data = await fetchRecentProducts(8);
 
   return (
     <div className="flex flex-col gap-6">
@@ -36,9 +41,7 @@ export default function LandingPage() {
           </a>
         </div>
 
-        {isPending ? null : error ? (
-          <EmptyState message={error.message} />
-        ) : data.products.length === 0 ? (
+        {!data || data.products.length === 0 ? (
           <EmptyState message="Nothing listed yet. Check back soon." />
         ) : (
           <ProductGrid products={data.products} />

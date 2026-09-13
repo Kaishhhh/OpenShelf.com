@@ -1,3 +1,8 @@
+'use client';
+
+// Holds buffer state, so it only works in a client component. Marked here rather
+// than at the barrel so Button and the other ref-only primitives stay usable from
+// a server component.
 import { KeyboardEvent, useState } from 'react';
 
 export interface TagInputProps {

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
-    "dev": "nx run-many -t serve dev --projects=@openshelf/api-gateway,@openshelf/auth-service,@openshelf/seller-service,@openshelf/admin-service,@openshelf/product-service,@openshelf/user-ui,@openshelf/seller-ui",
+    "dev": "nx run-many -t serve dev --projects=@openshelf/api-gateway,@openshelf/auth-service,@openshelf/seller-service,@openshelf/admin-service,@openshelf/product-service,@openshelf/order-service,@openshelf/user-ui,@openshelf/seller-ui",
     "prisma:generate": "prisma generate --schema=libs/prisma/prisma/schema.prisma",
     "prisma:push": "prisma db push --schema=libs/prisma/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=libs/prisma/prisma/schema.prisma",

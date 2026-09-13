@@ -53,6 +53,9 @@
     },
     {
       "path": "./libs/shared/email"
+    },
+    {
+      "path": "./apps/order-service"
     }
   ],
   "compilerOptions": {}

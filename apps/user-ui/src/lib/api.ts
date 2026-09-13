@@ -1,11 +1,31 @@
 import type {
-  Category,
+  CartResponse,
   LoginInput,
-  ProductSort,
   RegisterInput,
   ResendOtpInput,
   VerifyOtpInput,
 } from '@openshelf/types';
+import { catalogueQuery } from './catalogue-filters';
+import type {
+  CatalogueFilters,
+  CataloguePage,
+  ProductDetail,
+  ShopPage,
+} from './catalogue-types';
+
+// The response shapes live in one module so the server client can share them.
+export type {
+  CatalogueFilters,
+  CataloguePage,
+  CatalogueProduct,
+  ProductDetail,
+  ProductImage,
+  ShopByline,
+  ShopCard,
+  ShopPage,
+  ShopProfile,
+} from './catalogue-types';
+export { catalogueQuery } from './catalogue-filters';
 
 // Auth lives behind the gateway's /auth mount. apps/user-ui/.env is gitignored,
 // so these fallbacks are what a fresh clone actually runs on.
@@ -19,6 +39,12 @@ const PRODUCT_BASE_URL =
   process.env.NEXT_PUBLIC_PRODUCT_API_URL ?? 'http://localhost:8080/product';
 const SHOP_BASE_URL =
   process.env.NEXT_PUBLIC_SHOP_API_URL ?? 'http://localhost:8080/shop';
+
+// The cart goes through the gateway, unlike the server-side catalogue reads in
+// server-api.ts: these are browser requests and they need the auth cookie, which is
+// exactly what the gateway is there to carry.
+const ORDER_BASE_URL =
+  process.env.NEXT_PUBLIC_ORDER_API_URL ?? 'http://localhost:8080/order';
 
 export class ApiError extends Error {
   status: number;
@@ -76,6 +102,10 @@ const apiPost = <T>(path: string, body: unknown) =>
 const publicGet = <T>(base: string, path: string) =>
   send<T>('GET', base, path, undefined, false);
 
+// Cart calls omit the 5th argument, so credentials are included.
+const cartRequest = <T>(method: string, path: string, body?: unknown) =>
+  send<T>(method, ORDER_BASE_URL, path, body);
+
 // --- auth -----------------------------------------------------------------
 
 export function registerUser(input: RegisterInput) {
@@ -97,84 +127,6 @@ export function loginUser(input: LoginInput) {
 
 // --- catalogue ------------------------------------------------------------
 
-export interface ProductImage {
-  id: string;
-  fileId: string;
-  url: string;
-}
-
-/** The trimmed shop a catalogue row carries. Never the whole Shop row. */
-export interface ShopCard {
-  id: string;
-  name: string;
-  category: string;
-}
-
-export interface CatalogueProduct {
-  id: string;
-  title: string;
-  slug: string;
-  description: string;
-  category: string;
-  subCategory: string | null;
-  tags: string[];
-  price: number;
-  salePrice: number | null;
-  stock: number;
-  shopId: string;
-  createdAt: string;
-  images: ProductImage[];
-  shop?: ShopCard;
-}
-
-export interface ShopProfile {
-  id: string;
-  name: string;
-  bio: string | null;
-  category: string;
-  avatar: string | null;
-  coverBanner: string | null;
-  openingHours: string | null;
-  website: string | null;
-  socialLinks: Record<string, string> | null;
-  ratings: number;
-  createdAt: string;
-}
-
-export interface CataloguePage {
-  products: CatalogueProduct[];
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
-export interface ShopPage extends CataloguePage {
-  shop: ShopProfile;
-}
-
-export interface CatalogueFilters {
-  page?: number;
-  limit?: number;
-  category?: Category;
-  minPrice?: number;
-  maxPrice?: number;
-  shopId?: string;
-  sort?: ProductSort;
-}
-
-/** Omits empty values so a default filter never appears in the URL. */
-export function catalogueQuery(filters: CatalogueFilters): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== null && value !== '') {
-      params.set(key, String(value));
-    }
-  }
-  const query = params.toString();
-  return query ? `?${query}` : '';
-}
-
 export function listPublicProducts(filters: CatalogueFilters = {}) {
   return publicGet<CataloguePage>(
     PRODUCT_BASE_URL,
@@ -184,7 +136,7 @@ export function listPublicProducts(filters: CatalogueFilters = {}) {
 
 /** 404s for a DRAFT or DELETED product, or one whose shop is not approved. */
 export function getPublicProduct(slug: string) {
-  return publicGet<CatalogueProduct & { shop: ShopCard }>(
+  return publicGet<ProductDetail>(
     PRODUCT_BASE_URL,
     `/public/${encodeURIComponent(slug)}`
   );
@@ -196,4 +148,40 @@ export function getPublicShop(id: string, filters: CatalogueFilters = {}) {
     SHOP_BASE_URL,
     `/public/${encodeURIComponent(id)}${catalogueQuery(filters)}`
   );
+}
+
+// --- cart -----------------------------------------------------------------
+
+/**
+ * Every cart call answers with the whole cart, so a mutation's response can be dropped
+ * straight into the ['cart'] query rather than triggering a refetch.
+ *
+ * All of them 401 for an anonymous visitor — callers treat that as "not logged in"
+ * rather than as a failure.
+ */
+export function getCart() {
+  return cartRequest<CartResponse>('GET', '/cart');
+}
+
+export function addCartItem(input: { productId: string; quantity?: number }) {
+  return cartRequest<CartResponse>('POST', '/cart/items', input);
+}
+
+export function updateCartItem(productId: string, quantity: number) {
+  return cartRequest<CartResponse>(
+    'PATCH',
+    `/cart/items/${encodeURIComponent(productId)}`,
+    { quantity }
+  );
+}
+
+export function removeCartItem(productId: string) {
+  return cartRequest<CartResponse>(
+    'DELETE',
+    `/cart/items/${encodeURIComponent(productId)}`
+  );
+}
+
+export function clearCart() {
+  return cartRequest<CartResponse>('DELETE', '/cart');
 }

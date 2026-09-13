@@ -1,4 +1,5 @@
 import './global.css';
+import { CartIndicator } from '@/components/CartIndicator';
 import { Providers } from './providers';
 
 export const metadata = {
@@ -25,7 +26,8 @@ export default function RootLayout({
                   Browse
                 </a>
               </nav>
-              <div className="ml-auto flex gap-3 text-sm text-ink-muted">
+              <div className="ml-auto flex items-center gap-3 text-sm text-ink-muted">
+                <CartIndicator />
                 <a href="/login" className="hover:text-ink">
                   Log in
                 </a>
