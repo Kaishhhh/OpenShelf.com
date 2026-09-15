@@ -48,6 +48,8 @@ export async function isSellerAuthenticated(
       phoneNumber: true,
       country: true,
       stripeId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
       emailVerified: true,
       createdAt: true,
       updatedAt: true,

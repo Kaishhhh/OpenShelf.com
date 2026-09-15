@@ -59,11 +59,21 @@ model Seller {
   phoneNumber   String
   country       String
   stripeId      String?
+  // Mirrors of the Connect account's charges_enabled / payouts_enabled, kept in
+  // sync by the account.updated webhook. Independent of Shop.status: an
+  // approved shop can have neither, and a pending one can have both.
+  stripeChargesEnabled Boolean @default(false)
+  stripePayoutsEnabled Boolean @default(false)
   emailVerified Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   shop          Shop?
+
+  // The webhook finds a seller by account id. Not @unique: Prisma's Mongo
+  // unique index is not sparse, so every seller without a stripeId would
+  // collide on null. One account per seller is enforced in seller-service.
+  @@index([stripeId])
 }
 
 model Shop {

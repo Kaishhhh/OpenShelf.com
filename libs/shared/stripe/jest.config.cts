@@ -9,12 +9,9 @@ const swcJestConfig = JSON.parse(
 // Disable .swcrc look-up by SWC core because we're passing in swcJestConfig ourselves
 swcJestConfig.swcrc = false;
 
-// SWC rather than ts-jest, matching product-service and the libs: ts-jest emitted
-// the ESM workspace libs (@openshelf/errors etc.) untransformed and Jest could not
-// load them. SWC does not type-check — the typecheck target covers spec files.
 module.exports = {
-  displayName: '@openshelf/seller-service',
-  preset: '../../jest.preset.js',
+  displayName: '@openshelf/stripe',
+  preset: '../../../jest.preset.js',
   testEnvironment: 'node',
   transform: {
     '^.+\\.[tj]s$': ['@swc/jest', swcJestConfig],

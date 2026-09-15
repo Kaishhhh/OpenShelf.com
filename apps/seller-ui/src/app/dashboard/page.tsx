@@ -2,8 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { ApiError, getShop, type Shop } from '@/lib/api';
+import { PayoutsPanel } from './PayoutsPanel';
 
 function Panel({
   title,
@@ -20,29 +21,7 @@ function Panel({
   );
 }
 
-export default function DashboardPage() {
-  const router = useRouter();
-
-  const { data, error, isPending } = useQuery<Shop, ApiError>({
-    queryKey: ['shop'],
-    queryFn: getShop,
-    // A seller with no shop is the normal state right after registering, and
-    // it arrives as a 404 — retrying it would just repeat a correct answer.
-    retry: false,
-  });
-
-  const unauthenticated = error?.status === 401;
-
-  useEffect(() => {
-    if (unauthenticated) {
-      router.replace('/login');
-    }
-  }, [unauthenticated, router]);
-
-  if (isPending || unauthenticated) {
-    return null;
-  }
-
+function ShopPanel({ data, error }: { data?: Shop; error: ApiError | null }) {
   if (error) {
     if (error.status === 404) {
       return (
@@ -65,6 +44,10 @@ export default function DashboardPage() {
         <p className="text-sm text-danger">{error.message}</p>
       </Panel>
     );
+  }
+
+  if (!data) {
+    return null;
   }
 
   if (data.status === 'PENDING') {
@@ -108,5 +91,42 @@ export default function DashboardPage() {
         </a>
       </p>
     </Panel>
+  );
+}
+
+export default function DashboardPage() {
+  const router = useRouter();
+
+  const { data, error, isPending } = useQuery<Shop, ApiError>({
+    queryKey: ['shop'],
+    queryFn: getShop,
+    // A seller with no shop is the normal state right after registering, and
+    // it arrives as a 404 — retrying it would just repeat a correct answer.
+    retry: false,
+  });
+
+  const unauthenticated = error?.status === 401;
+
+  useEffect(() => {
+    if (unauthenticated) {
+      router.replace('/login');
+    }
+  }, [unauthenticated, router]);
+
+  if (isPending || unauthenticated) {
+    return null;
+  }
+
+  // Payouts render in every shop state, including no shop at all. Getting paid
+  // and being approved are separate: a seller can connect Stripe while their
+  // shop is pending, and an approved shop can have no Stripe account.
+  return (
+    <div className="flex w-full max-w-lg flex-col gap-4 py-8">
+      <ShopPanel data={data} error={error} />
+      {/* PayoutsPanel reads the query string, which Next requires to sit under Suspense. */}
+      <Suspense fallback={null}>
+        <PayoutsPanel shopApproved={data?.status === 'APPROVED'} />
+      </Suspense>
+    </div>
   );
 }

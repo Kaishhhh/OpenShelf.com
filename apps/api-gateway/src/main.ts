@@ -32,6 +32,10 @@ app.use(
     limit: (req) => (req.cookies?.access_token ? 1000 : 100),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    // Stripe's webhook carries no access_token, so it would share the 100/min
+    // anonymous bucket across the handful of IPs Stripe sends from, and a burst
+    // of retries would 429 itself. The route authenticates by signature instead.
+    skip: (req) => req.method === 'POST' && req.path === '/seller/stripe/webhook',
     handler: (req, res, next) => next(new RateLimitError()),
   })
 );

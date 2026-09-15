@@ -148,6 +148,30 @@ export function createShop(input: ShopCreateInput) {
   return apiPost<Shop>('/shop', input);
 }
 
+// --- payouts (Stripe Connect) ---------------------------------------------
+
+export interface StripeStatus {
+  connected: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  /** The seller finished Stripe's form — not that verification is done. */
+  detailsSubmitted: boolean;
+}
+
+/** Read live from Stripe on every call, so it is current even if a webhook was missed. */
+export function getStripeStatus() {
+  return apiGet<StripeStatus>('/stripe/status');
+}
+
+/**
+ * Creates the seller's connected account on first use and returns a fresh,
+ * single-use onboarding link. Links expire within minutes: request one
+ * immediately before redirecting, never ahead of time.
+ */
+export function startStripeOnboarding() {
+  return apiPost<{ url: string }>('/stripe/onboard', {});
+}
+
 // --- products -------------------------------------------------------------
 
 export type ProductStatus = 'ACTIVE' | 'DRAFT' | 'DELETED';
