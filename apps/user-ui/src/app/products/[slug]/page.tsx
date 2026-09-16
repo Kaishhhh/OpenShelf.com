@@ -91,11 +91,15 @@ export default async function ProductDetailPage({
             className="text-lg"
           />
 
-          <p className="text-sm text-ink-muted">
-            {product.stock > 0
-              ? `${product.stock} in stock`
-              : 'Currently out of stock'}
-          </p>
+          {/* Omitted when unpurchasable: the disabled button below already says why,
+              and stock is beside the point when it can't be bought at all. */}
+          {product.purchasable && (
+            <p className="text-sm text-ink-muted">
+              {product.stock > 0
+                ? `${product.stock} in stock`
+                : 'Currently out of stock'}
+            </p>
+          )}
 
           <p className="whitespace-pre-line text-sm text-ink">
             {product.description}
@@ -120,6 +124,7 @@ export default async function ProductDetailPage({
             productId={product.id}
             slug={product.slug}
             stock={product.stock}
+            purchasable={product.purchasable}
           />
 
           <p className="border-t border-line pt-3 text-sm text-ink-muted">

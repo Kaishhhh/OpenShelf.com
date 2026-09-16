@@ -24,6 +24,14 @@ export {
  */
 export const PRODUCT_NOT_AVAILABLE_MESSAGE = 'Product not available';
 
+/**
+ * A product the buyer can already see but cannot pay for: its seller cannot receive
+ * funds. Distinct from the 404 above because nothing is being hidden — the catalogue
+ * lists the product and reports `purchasable: false` itself.
+ */
+export const PRODUCT_NOT_PURCHASABLE_MESSAGE =
+  'This product is not currently available for purchase';
+
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
 
 export function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown): T {

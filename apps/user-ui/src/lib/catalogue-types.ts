@@ -52,6 +52,12 @@ export interface CatalogueProduct {
   createdAt: string;
   images: ProductImage[];
   shop?: ShopCard;
+  /**
+   * Whether the seller can currently receive funds. Derived live upstream; a false
+   * product is still listed, it just can't be bought. order-service enforces this —
+   * the UI only reflects it.
+   */
+  purchasable: boolean;
 }
 
 export type ProductDetail = Omit<CatalogueProduct, 'shop'> & {
@@ -70,6 +76,7 @@ export interface ShopProfile {
   socialLinks: Record<string, string> | null;
   ratings: number;
   createdAt: string;
+  purchasable: boolean;
 }
 
 export interface CataloguePage {

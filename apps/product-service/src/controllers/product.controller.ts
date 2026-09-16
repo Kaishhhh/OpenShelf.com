@@ -358,6 +358,25 @@ const PUBLIC_SHOP_PROFILE = {
   createdAt: true,
 } as const;
 
+/**
+ * The one seller field a public read may touch — and only to derive `purchasable`.
+ * Every response below projects explicitly, so `seller` never reaches the client.
+ */
+const SELLER_CHARGES = {
+  seller: { select: { stripeChargesEnabled: true } },
+} as const;
+
+/**
+ * Whether a buyer can pay this shop's seller. Read live from the Seller row the
+ * webhook keeps in sync, never snapshotted onto the product. `=== true` fails
+ * closed for a seller document that predates the field.
+ */
+function isPurchasable(shop: {
+  seller: { stripeChargesEnabled: boolean } | null;
+}): boolean {
+  return shop.seller?.stripeChargesEnabled === true;
+}
+
 const SORT_ORDER = {
   newest: { createdAt: 'desc' },
   'price-asc': { price: 'asc' },
@@ -398,14 +417,19 @@ export async function listPublicProducts(req: Request, res: Response) {
       orderBy: SORT_ORDER[sort],
       include: {
         images: { select: IMAGE_SELECT },
-        shop: { select: PUBLIC_SHOP_CARD },
+        shop: { select: { ...PUBLIC_SHOP_CARD, ...SELLER_CHARGES } },
       },
     }),
     prisma.product.count({ where }),
   ]);
 
   return res.status(200).json({
-    products,
+    // Unpurchasable products stay in the list — only buying is blocked.
+    products: products.map(({ shop, ...rest }) => ({
+      ...rest,
+      shop: { id: shop.id, name: shop.name, category: shop.category },
+      purchasable: isPurchasable(shop),
+    })),
     page,
     limit,
     total,
@@ -427,13 +451,17 @@ export async function getPublicShop(req: Request, res: Response) {
     req.query
   );
 
-  const shop = await prisma.shop.findFirst({
+  const found = await prisma.shop.findFirst({
     where: { id, status: 'APPROVED' },
-    select: PUBLIC_SHOP_PROFILE,
+    select: { ...PUBLIC_SHOP_PROFILE, ...SELLER_CHARGES },
   });
-  if (!shop) {
+  if (!found) {
     throw new NotFoundError(SHOP_NOT_FOUND_MESSAGE);
   }
+
+  const { seller, ...profile } = found;
+  const purchasable = isPurchasable({ seller });
+  const shop = { ...profile, purchasable };
 
   const where = { shopId: id, status: 'ACTIVE' as const };
 
@@ -450,7 +478,7 @@ export async function getPublicShop(req: Request, res: Response) {
 
   return res.status(200).json({
     shop,
-    products,
+    products: products.map((product) => ({ ...product, purchasable })),
     page,
     limit,
     total,
@@ -463,7 +491,10 @@ export async function getPublicProductBySlug(req: Request, res: Response) {
 
   const product = await prisma.product.findFirst({
     where: { slug, status: 'ACTIVE' },
-    include: { shop: true, images: { select: IMAGE_SELECT } },
+    include: {
+      shop: { include: SELLER_CHARGES },
+      images: { select: IMAGE_SELECT },
+    },
   });
 
   // DRAFT and DELETED are excluded by the status filter; a shop that is not
@@ -482,5 +513,6 @@ export async function getPublicProductBySlug(req: Request, res: Response) {
       avatar: shop.avatar,
       ratings: shop.ratings,
     },
+    purchasable: isPurchasable(shop),
   });
 }

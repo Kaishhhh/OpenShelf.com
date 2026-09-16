@@ -15,6 +15,7 @@ import {
   MAX_CART_ITEMS,
   MAX_CART_QUANTITY,
   PRODUCT_NOT_AVAILABLE_MESSAGE,
+  PRODUCT_NOT_PURCHASABLE_MESSAGE,
   parseOrThrow,
   parseProductId,
   requireUserId,
@@ -27,8 +28,9 @@ import {
 /**
  * Everything the cart renders, read fresh on every request.
  *
- * `status` and `shop.status` are selected so this function — not the caller — decides
- * what is still buyable. Only the first image is taken: the cart shows a thumbnail.
+ * `status`, `shop.status` and the seller's charges flag are selected so this function —
+ * not the caller — decides what is still buyable. The seller flag is the only seller
+ * field read, and it never reaches the response. Only the first image is taken: the cart shows a thumbnail.
  */
 const CART_PRODUCT_SELECT = {
   id: true,
@@ -38,7 +40,14 @@ const CART_PRODUCT_SELECT = {
   salePrice: true,
   stock: true,
   status: true,
-  shop: { select: { id: true, name: true, status: true } },
+  shop: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      seller: { select: { stripeChargesEnabled: true } },
+    },
+  },
   images: { select: { url: true }, take: 1 },
 } as const;
 
@@ -50,8 +59,8 @@ const money = (value: number) => Math.round(value * 100) / 100;
  *
  * Two rules differ deliberately:
  *
- * - A product that is no longer ACTIVE, or whose shop is no longer APPROVED, is
- *   **deleted from storage** as it is reported. The notice fires once and the cart
+ * - A product that is no longer ACTIVE, whose shop is no longer APPROVED, or whose
+ *   seller can no longer receive funds, is **deleted from storage** as it is reported. The notice fires once and the cart
  *   heals itself.
  * - A quantity above stock is **reported but not persisted**. Stock is transient — a
  *   restock should restore the buyer's original quantity rather than having silently
@@ -88,7 +97,10 @@ async function buildCart(
     if (
       !product ||
       product.status !== 'ACTIVE' ||
-      product.shop.status !== 'APPROVED'
+      product.shop.status !== 'APPROVED' ||
+      // Live, not snapshotted at add time: Stripe can restrict an account while the
+      // item sits in the cart. `!== true` fails closed on an unset field.
+      product.shop.seller?.stripeChargesEnabled !== true
     ) {
       gone.push(productId);
       // A product the query did not return has no title to report. "An item" is
@@ -173,6 +185,10 @@ async function respondWithCart(userId: string, res: Response) {
  * Validated before storing so an unbuyable id never reaches Redis in the first place —
  * the prune inside a read is a safety net for products that change *after* they were
  * added, not the primary gate.
+ *
+ * Two outcomes on purpose: anything not publicly visible is the uniform 404, while a
+ * visible product whose seller cannot receive funds is a 400 — the catalogue already
+ * says it is unpurchasable, so a distinct answer reveals nothing.
  */
 async function requireBuyableProduct(productId: string): Promise<void> {
   const product = await prisma.product.findFirst({
@@ -181,11 +197,17 @@ async function requireBuyableProduct(productId: string): Promise<void> {
       status: 'ACTIVE',
       shop: { is: { status: 'APPROVED' } },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      shop: { select: { seller: { select: { stripeChargesEnabled: true } } } },
+    },
   });
 
   if (!product) {
     throw new NotFoundError(PRODUCT_NOT_AVAILABLE_MESSAGE);
+  }
+  if (product.shop.seller?.stripeChargesEnabled !== true) {
+    throw new ValidationError(PRODUCT_NOT_PURCHASABLE_MESSAGE);
   }
 }
 

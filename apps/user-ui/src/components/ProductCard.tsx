@@ -41,9 +41,20 @@ export function ProductCard({ product }: { product: CatalogueProduct }) {
           salePrice={product.salePrice}
           className="text-sm"
         />
-        <span className="truncate text-xs text-ink-muted">
-          {product.shop?.name ?? product.category}
-          {product.stock === 0 && ' · Out of stock'}
+        {/* The shop name truncates on its own so a long one can't swallow the status.
+            An unpurchasable product is still shown, never hidden — only buying is
+            blocked. */}
+        <span className="flex min-w-0 text-xs text-ink-muted">
+          <span className="truncate">
+            {product.shop?.name ?? product.category}
+          </span>
+          {!product.purchasable ? (
+            <span className="shrink-0">&nbsp;· Unavailable to buy</span>
+          ) : (
+            product.stock === 0 && (
+              <span className="shrink-0">&nbsp;· Out of stock</span>
+            )
+          )}
         </span>
       </div>
     </a>

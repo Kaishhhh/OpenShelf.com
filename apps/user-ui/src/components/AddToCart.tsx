@@ -17,13 +17,25 @@ export function AddToCart({
   productId,
   slug,
   stock,
+  purchasable,
 }: {
   productId: string;
   slug: string;
   stock: number;
+  purchasable: boolean;
 }) {
   const router = useRouter();
   const mutation = useAddToCart();
+
+  // Checked before stock: restocking would not make this buyable, so "Out of stock"
+  // would be the wrong reason to give.
+  if (!purchasable) {
+    return (
+      <Button type="button" disabled>
+        Not currently available for purchase
+      </Button>
+    );
+  }
 
   if (stock === 0) {
     return (

@@ -6,9 +6,11 @@ import { Button } from '@openshelf/ui';
 import {
   ApiError,
   deleteProduct,
+  getStripeStatus,
   listMyProducts,
   type Product,
   type ProductPage,
+  type StripeStatus,
 } from '@/lib/api';
 import { useApprovedShop } from '@/lib/use-approved-shop';
 
@@ -52,6 +54,12 @@ function ProductList({
     queryFn: () => listMyProducts(page),
   });
 
+  // Same key as PayoutsPanel, so moving between here and the dashboard shares one read.
+  const stripe = useQuery<StripeStatus, ApiError>({
+    queryKey: ['stripe-status'],
+    queryFn: getStripeStatus,
+  });
+
   const remove = useMutation({
     mutationFn: deleteProduct,
     onSuccess: () => {
@@ -83,6 +91,18 @@ function ProductList({
           Add product
         </a>
       </div>
+
+      {/* Advisory only — order-service is what actually refuses the sale. Rendered only
+          on a successful read, so a failed status call never claims a problem. */}
+      {stripe.data && !stripe.data.chargesEnabled && (
+        <div className="rounded-card border border-accent/40 bg-surface p-3 text-sm text-ink">
+          Buyers can see your products but can&apos;t purchase them until you can
+          receive funds.{' '}
+          <a href="/dashboard#payouts" className="text-accent">
+            Set up payouts
+          </a>
+        </div>
+      )}
 
       {data.products.length === 0 ? (
         <div className="flex flex-col gap-2 rounded-card border border-line bg-surface p-6">

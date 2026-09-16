@@ -29,9 +29,13 @@ interface FakeProduct {
 interface FakeShop {
   id: string;
   name: string;
+  category: string;
   avatar: string | null;
   ratings: number;
   status: ShopStatus;
+  // Deliberately carries stripeId: the fake returns the whole row regardless of
+  // `select`, so a handler that spread `shop.seller` would leak it in a test.
+  seller: { stripeChargesEnabled: boolean; stripeId: string | null };
 }
 
 interface WhereClause {
@@ -44,7 +48,7 @@ interface WhereClause {
 interface PrismaArgs {
   where: WhereClause;
   data?: Partial<FakeProduct>;
-  include?: { shop?: boolean; images?: unknown };
+  include?: { shop?: unknown; images?: unknown };
   skip?: number;
   take?: number;
   orderBy?: unknown;
@@ -96,16 +100,20 @@ const shops: Record<string, FakeShop> = {
   [SHOP_A]: {
     id: SHOP_A,
     name: 'Shop A',
+    category: 'Home & Garden',
     avatar: null,
     ratings: 4.5,
     status: 'APPROVED',
+    seller: { stripeChargesEnabled: true, stripeId: 'acct_secret_a' },
   },
   [SHOP_B]: {
     id: SHOP_B,
     name: 'Shop B',
+    category: 'Home & Garden',
     avatar: null,
     ratings: 4.0,
     status: 'APPROVED',
+    seller: { stripeChargesEnabled: true, stripeId: 'acct_secret_b' },
   },
 };
 
@@ -229,6 +237,14 @@ jest.mock('@openshelf/prisma', () => ({
         return Promise.resolve(row);
       },
     },
+    shop: {
+      findFirst: (args: { where: { id: string; status: ShopStatus } }) => {
+        const shop = shops[args.where.id];
+        return Promise.resolve(
+          shop && shop.status === args.where.status ? shop : null
+        );
+      },
+    },
     product: {
       create: (args: CreateArgs) => {
         calls.push({ method: 'create', args: args as unknown as PrismaArgs });
@@ -244,7 +260,12 @@ jest.mock('@openshelf/prisma', () => ({
       },
       findMany: (args: PrismaArgs) => {
         calls.push({ method: 'findMany', args });
-        return Promise.resolve(table.filter((r) => matches(r, args.where)));
+        const rows = table.filter((r) => matches(r, args.where));
+        return Promise.resolve(
+          args.include?.shop
+            ? rows.map((r) => ({ ...r, shop: shops[r.shopId] }))
+            : rows
+        );
       },
       count: (args: PrismaArgs) => {
         calls.push({ method: 'count', args });
@@ -269,8 +290,10 @@ import {
   deleteProductImage,
   getProduct,
   getPublicProductBySlug,
+  getPublicShop,
   getUploadAuth,
   listMyProducts,
+  listPublicProducts,
   updateProduct,
 } from './product.controller.js';
 
@@ -326,6 +349,8 @@ beforeEach(() => {
   calls.length = 0;
   shops[SHOP_A].status = 'APPROVED';
   shops[SHOP_B].status = 'APPROVED';
+  shops[SHOP_A].seller.stripeChargesEnabled = true;
+  shops[SHOP_B].seller.stripeChargesEnabled = true;
 
   images = [
     { id: IMAGE_A, fileId: FILE_A, url: `${CDN}/a.jpg`, productId: PRODUCT_A },
@@ -602,6 +627,86 @@ describe('getPublicProductBySlug', () => {
     await expect(
       getPublicProductBySlug(mockReq({ params: { slug: 'nope' } }, null), mockRes())
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('is purchasable when the seller can receive funds', async () => {
+    const res = mockRes();
+    await getPublicProductBySlug(mockReq({ params: { slug: 'mug' } }, null), res);
+    expect(res.body.purchasable).toBe(true);
+  });
+
+  // Listed but not buyable: still a 200, never a 404.
+  it('is still returned, unpurchasable, when the seller cannot receive funds', async () => {
+    shops[SHOP_A].seller.stripeChargesEnabled = false;
+    const res = mockRes();
+    await getPublicProductBySlug(mockReq({ params: { slug: 'mug' } }, null), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.purchasable).toBe(false);
+  });
+
+  it('never exposes seller fields', async () => {
+    const res = mockRes();
+    await getPublicProductBySlug(mockReq({ params: { slug: 'mug' } }, null), res);
+    const json = JSON.stringify(res.body);
+    expect(json).not.toContain('seller');
+    expect(json).not.toContain('acct_secret');
+  });
+});
+
+describe('listPublicProducts', () => {
+  it('derives purchasable per product from its own seller', async () => {
+    shops[SHOP_B].seller.stripeChargesEnabled = false;
+    const res = mockRes();
+    await listPublicProducts(mockReq({}, null), res);
+
+    const products = res.body.products as {
+      id: string;
+      purchasable: boolean;
+    }[];
+    // The unpurchasable product is still listed.
+    expect(products.map((p) => [p.id, p.purchasable])).toEqual([
+      [PRODUCT_A, true],
+      [PRODUCT_B, false],
+    ]);
+  });
+
+  it('projects the shop card and never exposes seller fields', async () => {
+    const res = mockRes();
+    await listPublicProducts(mockReq({}, null), res);
+
+    const products = res.body.products as { shop: unknown }[];
+    expect(products[0].shop).toEqual({
+      id: SHOP_A,
+      name: 'Shop A',
+      category: 'Home & Garden',
+    });
+    const json = JSON.stringify(res.body);
+    expect(json).not.toContain('seller');
+    expect(json).not.toContain('acct_secret');
+  });
+});
+
+describe('getPublicShop', () => {
+  it('marks the shop and its products unpurchasable when charges are disabled', async () => {
+    shops[SHOP_A].seller.stripeChargesEnabled = false;
+    const res = mockRes();
+    await getPublicShop(mockReq({ params: { id: SHOP_A } }, null), res);
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body.shop as { purchasable: boolean }).purchasable).toBe(false);
+    const products = res.body.products as { id: string; purchasable: boolean }[];
+    expect(products).toEqual([
+      expect.objectContaining({ id: PRODUCT_A, purchasable: false }),
+    ]);
+  });
+
+  it('never exposes seller fields', async () => {
+    const res = mockRes();
+    await getPublicShop(mockReq({ params: { id: SHOP_A } }, null), res);
+    expect((res.body.shop as { purchasable: boolean }).purchasable).toBe(true);
+    const json = JSON.stringify(res.body);
+    expect(json).not.toContain('seller');
+    expect(json).not.toContain('acct_secret');
   });
 });
 

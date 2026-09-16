@@ -214,7 +214,11 @@ export function PayoutsPanel({ shopApproved }: { shopApproved: boolean }) {
   }
 
   return (
-    <section className="w-full max-w-lg rounded-card border border-line bg-surface p-6">
+    // id is the target of the /products banner's link.
+    <section
+      id="payouts"
+      className="w-full max-w-lg rounded-card border border-line bg-surface p-6"
+    >
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold text-ink">Payouts</h2>
         {phase && <Badge phase={phase} />}
