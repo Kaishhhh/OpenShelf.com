@@ -35,9 +35,11 @@ app.use(
     // Stripe's webhooks carry no access_token, so it would share the 100/min
     // anonymous bucket across the handful of IPs Stripe sends from, and a burst
     // of retries would 429 itself. The route authenticates by signature instead.
+    // The notification socket is one long-lived connection per tab, not request traffic.
     skip: (req) =>
-      req.method === 'POST' &&
-      (req.path === '/seller/stripe/webhook' || req.path === '/order/webhook'),
+      req.path.startsWith('/notification/socket.io') ||
+      (req.method === 'POST' &&
+        (req.path === '/seller/stripe/webhook' || req.path === '/order/webhook')),
     handler: (req, res, next) => next(new RateLimitError()),
   })
 );
@@ -52,6 +54,8 @@ const PRODUCT_SERVICE_URL =
   process.env.PRODUCT_SERVICE_URL || 'http://localhost:6002';
 const ORDER_SERVICE_URL =
   process.env.ORDER_SERVICE_URL || 'http://localhost:6004';
+const NOTIFICATION_SERVICE_URL =
+  process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:6005';
 
 app.use(
   '/auth',
@@ -108,6 +112,33 @@ app.use(
   })
 );
 
+// Socket.IO for live notifications. notification-service serves it at /api/socket.io on its
+// HTTP port; clients reach it through the gateway at /notification/socket.io, so the
+// access_token cookie for this origin rides along on the handshake.
+//
+// Mounted at the root with a pathFilter rather than under '/notification', because
+// WebSocket upgrades never pass through Express: they are handled by the server's 'upgrade'
+// event below, which sees the full, unstripped path. `ws` is deliberately not set — that
+// would make the proxy subscribe to 'upgrade' itself on the first HTTP request, and every
+// upgrade would then be proxied twice.
+const notificationSocketProxy = createProxyMiddleware({
+  target: NOTIFICATION_SERVICE_URL,
+  changeOrigin: true,
+  pathFilter: '/notification/socket.io',
+  pathRewrite: { '^/notification/socket.io': '/api/socket.io' },
+});
+app.use(notificationSocketProxy);
+
+// Same bare /api target as /order: notification-service mounts its router at /api, so
+// /notification/notifications arrives as /api/notifications.
+app.use(
+  '/notification',
+  createProxyMiddleware({
+    target: `${NOTIFICATION_SERVICE_URL}/api`,
+    changeOrigin: true,
+  })
+);
+
 app.use(errorMiddleware);
 
 const port = process.env.PORT || 8080;
@@ -115,3 +146,4 @@ const server = app.listen(port, () => {
   console.log(`Listening at http://localhost:${port}`);
 });
 server.on('error', console.error);
+server.on('upgrade', notificationSocketProxy.upgrade);

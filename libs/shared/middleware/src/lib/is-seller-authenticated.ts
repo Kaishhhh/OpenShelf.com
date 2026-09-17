@@ -50,6 +50,7 @@ export async function isSellerAuthenticated(
       stripeId: true,
       stripeChargesEnabled: true,
       stripePayoutsEnabled: true,
+      fcmTokens: true,
       emailVerified: true,
       createdAt: true,
       updatedAt: true,

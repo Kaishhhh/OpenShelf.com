@@ -67,6 +67,7 @@
   },
   "dependencies": {
     "@openshelf/errors": "*",
+    "@openshelf/kafka": "*",
     "@openshelf/middleware": "*",
     "@openshelf/prisma": "*",
     "@openshelf/redis": "*",

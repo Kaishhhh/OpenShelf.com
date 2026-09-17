@@ -59,6 +59,15 @@
     },
     {
       "path": "./libs/shared/stripe"
+    },
+    {
+      "path": "./libs/shared/kafka"
+    },
+    {
+      "path": "./apps/notification-service"
+    },
+    {
+      "path": "./libs/shared/firebase"
     }
   ],
   "compilerOptions": {}

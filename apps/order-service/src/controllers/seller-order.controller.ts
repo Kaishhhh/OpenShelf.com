@@ -15,6 +15,7 @@ import {
   type SellerOrderPage,
 } from '@openshelf/types';
 import { parseOrThrow } from '../utils/cart.helper.js';
+import { emitOrderStatusChanged } from '../utils/events.js';
 import {
   OBJECT_ID_PATTERN,
   ORDER_ITEM_SELECT,
@@ -221,6 +222,21 @@ export async function updateOrderStatus(req: Request, res: Response) {
       `Cannot change order from ${order.status} to ${target}`,
       { currentStatus: order.status, attemptedStatus: target }
     );
+  }
+
+  // The buyer's id is read for the event only, and deliberately not through
+  // SELLER_ORDER_SELECT — it must never reach the seller's response.
+  const owner = await prisma.order.findFirst({
+    where: { id, shopId },
+    select: { userId: true },
+  });
+  if (owner) {
+    void emitOrderStatusChanged({
+      orderId: id,
+      shopId,
+      userId: owner.userId,
+      status: target,
+    });
   }
 
   const refundRequired = target === 'CANCELLED';

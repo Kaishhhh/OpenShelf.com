@@ -8,6 +8,7 @@ import {
   type StripePaymentIntent,
 } from '@openshelf/stripe';
 import { removeItems } from '../utils/cart.store.js';
+import { emitOrderCreated } from '../utils/events.js';
 import {
   computeSplit,
   lineTotal,
@@ -36,9 +37,15 @@ function isWriteConflict(err: unknown): boolean {
   );
 }
 
+interface CreatedOrder {
+  id: string;
+  shopId: string;
+  subtotal: number;
+}
+
 /**
- * Claims the payment and writes its orders, all or nothing. Returns false when another
- * delivery already did.
+ * Claims the payment and writes its orders, all or nothing. Returns the orders it wrote,
+ * or null when another delivery already did.
  *
  * The claim is a conditional update on Payment.status. Inside a transaction, a second
  * delivery either sees SUCCEEDED and matches nothing, or races this one to the same
@@ -53,7 +60,7 @@ function isWriteConflict(err: unknown): boolean {
  * item, because the buyer has paid for it; it is flagged instead, and stock is left
  * alone.
  */
-async function fulfilPayment(payment: Payment): Promise<boolean> {
+async function fulfilPayment(payment: Payment): Promise<CreatedOrder[] | null> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await prisma.$transaction(async (tx) => {
@@ -62,9 +69,10 @@ async function fulfilPayment(payment: Payment): Promise<boolean> {
           data: { status: 'SUCCEEDED' },
         });
         if (count === 0) {
-          return false;
+          return null;
         }
 
+        const created: CreatedOrder[] = [];
         for (const [shopId, lines] of splitByShop(payment.lines)) {
           const items: Prisma.OrderItemCreateWithoutOrderInput[] = [];
 
@@ -84,7 +92,8 @@ async function fulfilPayment(payment: Payment): Promise<boolean> {
             });
           }
 
-          await tx.order.create({
+          const order = await tx.order.create({
+            select: { id: true, shopId: true, subtotal: true },
             data: {
               paymentId: payment.id,
               shopId,
@@ -96,9 +105,10 @@ async function fulfilPayment(payment: Payment): Promise<boolean> {
               items: { create: items },
             },
           });
+          created.push(order);
         }
 
-        return true;
+        return created;
       }, TRANSACTION_OPTIONS);
     } catch (err) {
       if (!isWriteConflict(err) || attempt >= MAX_WRITE_CONFLICT_RETRIES) {
@@ -237,9 +247,24 @@ async function handlePaymentSucceeded(intent: StripePaymentIntent) {
     return { applied: false };
   }
 
-  const claimed = await fulfilPayment(payment);
-  if (claimed) {
+  const created = await fulfilPayment(payment);
+  const claimed = created !== null;
+  if (created) {
     await removePaidLines(payment);
+
+    // After the commit, and only from the delivery that wrote the orders — a replay has
+    // nothing new to announce. Not awaited: the buyer has paid, and a broker outage must
+    // not turn that into a failed webhook. See utils/events.ts.
+    for (const order of created) {
+      void emitOrderCreated({
+        orderId: order.id,
+        shopId: order.shopId,
+        userId: payment.userId,
+        status: 'PAID',
+        subtotal: order.subtotal,
+        currency: payment.currency,
+      });
+    }
   }
 
   const transfers = await transferPendingOrders(payment, intent);

@@ -7,3 +7,5 @@ export * from './lib/product.schemas';
 export * from './lib/cart.schemas';
 export * from './lib/order-status';
 export * from './lib/order.schemas';
+export * from './lib/events';
+export * from './lib/notification.schemas';

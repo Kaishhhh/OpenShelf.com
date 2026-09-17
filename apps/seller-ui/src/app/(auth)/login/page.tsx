@@ -1,7 +1,8 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { NOTIFICATIONS_KEY } from '@/lib/realtime';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { loginSchema, type LoginInput } from '@openshelf/types';
@@ -22,9 +23,14 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const queryClient = useQueryClient();
+
   const mutation = useMutation<SellerSummary, ApiError, LoginInput>({
     mutationFn: loginSeller,
     onSuccess: () => {
+      // The notifications query ran as anonymous on this page and its 401 is cached. Its
+      // data is what shows the header and connects the socket, so refetch it now.
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
       router.push('/dashboard');
     },
     // 401 (invalid credentials, unverified email) and 429 (lockout) have no

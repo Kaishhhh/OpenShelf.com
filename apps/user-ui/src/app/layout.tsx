@@ -1,5 +1,6 @@
 import './global.css';
 import { CartIndicator } from '@/components/CartIndicator';
+import { HeaderAccount } from '@/components/HeaderAccount';
 import { Providers } from './providers';
 
 export const metadata = {
@@ -31,12 +32,7 @@ export default function RootLayout({
                 <a href="/orders" className="hover:text-ink">
                   Orders
                 </a>
-                <a href="/login" className="hover:text-ink">
-                  Log in
-                </a>
-                <a href="/register" className="hover:text-ink">
-                  Register
-                </a>
+                <HeaderAccount />
               </div>
             </div>
           </header>

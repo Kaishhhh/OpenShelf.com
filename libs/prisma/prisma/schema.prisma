@@ -48,6 +48,11 @@ enum TransferStatus {
   FAILED
 }
 
+enum NotificationRecipient {
+  USER
+  SELLER
+}
+
 model User {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   name          String
@@ -89,6 +94,9 @@ model Seller {
   // approved shop can have neither, and a pending one can have both.
   stripeChargesEnabled Boolean @default(false)
   stripePayoutsEnabled Boolean @default(false)
+  // Firebase Cloud Messaging registration tokens, one per browser the seller
+  // enabled push in. Pruned when FCM reports a token dead.
+  fcmTokens     String[]
   emailVerified Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -282,4 +290,30 @@ model OrderItem {
   order          Order   @relation(fields: [orderId], references: [id])
 
   @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications. Written by notification-service from Kafka events.
+// ---------------------------------------------------------------------------
+
+// One row per recipient per event. Polymorphic — a buyer (User) or a seller —
+// so recipientId has no relation.
+model Notification {
+  id            String                @id @default(auto()) @map("_id") @db.ObjectId
+  recipientRole NotificationRecipient
+  recipientId   String                @db.ObjectId
+  // The Kafka event that produced this row. Together with the recipient it is
+  // the idempotency key: a redelivered event hits the unique index below and
+  // writes nothing.
+  eventId       String
+  type          String
+  title         String
+  body          String
+  orderId       String?               @db.ObjectId
+  readAt        DateTime?
+  createdAt     DateTime              @default(now())
+
+  @@unique([eventId, recipientRole, recipientId])
+  // A recipient's feed, newest first.
+  @@index([recipientRole, recipientId, createdAt])
 }

@@ -4,3 +4,4 @@ export const TOO_MANY_ATTEMPTS_MESSAGE =
 export const COOLDOWN_MESSAGE = 'Please wait before requesting another code';
 export const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
 export const INVALID_REFRESH_TOKEN_MESSAGE = 'Invalid refresh token';
+export const NOT_AUTHENTICATED_MESSAGE = 'Not authenticated';

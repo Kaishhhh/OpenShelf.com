@@ -1,5 +1,7 @@
 import type {
   LoginInput,
+  NotificationItem,
+  NotificationPage,
   OrderStatus,
   OrderStatusUpdateResponse,
   SellerOrder,
@@ -12,6 +14,7 @@ import type {
   ShopStatus,
   VerifyOtpInput,
 } from '@openshelf/types';
+import { refreshSession } from './session';
 
 // The gateway strips the /seller mount before proxying to seller-service,
 // so every path below is relative to it. apps/seller-ui/.env is gitignored,
@@ -29,6 +32,20 @@ const PRODUCT_BASE_URL =
 // order-service, for the shop's orders. Same reasoning as PRODUCT_BASE_URL.
 const ORDER_BASE_URL =
   process.env.NEXT_PUBLIC_ORDER_API_URL ?? 'http://localhost:8080/order';
+
+// notification-service. Seller routes live under /seller on it.
+const NOTIFICATION_BASE_URL =
+  process.env.NEXT_PUBLIC_NOTIFICATION_API_URL ?? 'http://localhost:8080/notification';
+
+/** Auth endpoints, where a 401 is an answer — never a reason to refresh and retry. */
+const AUTH_PATHS = new Set([
+  '/login',
+  '/register',
+  '/verify-otp',
+  '/resend-otp',
+  '/refresh-token',
+  '/logout',
+]);
 
 export class ApiError extends Error {
   status: number;
@@ -66,16 +83,28 @@ async function send<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    credentials: 'include',
-    ...(body === undefined
-      ? {}
-      : {
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }),
-  });
+  const attempt = () =>
+    fetch(`${base}${path}`, {
+      method,
+      credentials: 'include',
+      ...(body === undefined
+        ? {}
+        : {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    });
+
+  const startedAt = Date.now();
+  let res = await attempt();
+
+  // An expired access token: refresh once and retry once. See lib/session.ts for why the
+  // refresh itself is serialised across requests and tabs.
+  if (res.status === 401 && !(base === API_BASE_URL && AUTH_PATHS.has(path))) {
+    if (await refreshSession(startedAt)) {
+      res = await attempt();
+    }
+  }
 
   return toResult<T>(res);
 }
@@ -301,4 +330,40 @@ export function updateOrderStatus(id: string, status: OrderStatus) {
     `/seller/orders/${encodeURIComponent(id)}/status`,
     { status }
   );
+}
+
+// --- session and notifications --------------------------------------------
+
+/** Ends the session. Always resolves: a failed logout still leaves the client logged out. */
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE_URL}/logout`, { method: 'POST', credentials: 'include' }).catch(
+    () => undefined
+  );
+}
+
+const notificationRequest = <T>(method: string, path: string, body?: unknown) =>
+  send<T>(method, NOTIFICATION_BASE_URL, `/seller${path}`, body);
+
+/** The most recent notifications, with the unread count across all of them. */
+export function listNotifications(limit = 10) {
+  return notificationRequest<NotificationPage>('GET', `/notifications?limit=${limit}`);
+}
+
+export function markNotificationRead(id: string) {
+  return notificationRequest<NotificationItem>(
+    'PATCH',
+    `/notifications/${encodeURIComponent(id)}/read`
+  );
+}
+
+export function markAllNotificationsRead() {
+  return notificationRequest<{ updated: number }>('POST', '/notifications/read-all');
+}
+
+export function registerPushToken(token: string) {
+  return notificationRequest<void>('POST', '/fcm-tokens', { token });
+}
+
+export function removePushToken(token: string) {
+  return notificationRequest<void>('DELETE', '/fcm-tokens', { token });
 }

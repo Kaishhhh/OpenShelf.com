@@ -63,6 +63,7 @@ function makeSeller(stripeId: string | null): AuthenticatedSeller {
     stripeId,
     stripeChargesEnabled: false,
     stripePayoutsEnabled: false,
+    fcmTokens: [],
     emailVerified: true,
     createdAt: new Date(),
     updatedAt: new Date(),

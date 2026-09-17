@@ -35,6 +35,9 @@
       "path": "../../libs/shared/middleware/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/shared/kafka/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/shared/errors/tsconfig.lib.json"
     }
   ]

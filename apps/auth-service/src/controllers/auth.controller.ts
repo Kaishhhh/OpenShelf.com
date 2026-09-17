@@ -17,7 +17,7 @@ import {
   comparePassword,
   consumeOtp,
   cookieFlags,
-  deleteAllRefreshTokensForUser,
+  checkRefreshToken,
   getPendingRegistration,
   hashPassword,
   isOtpCoolingDown,
@@ -188,8 +188,15 @@ export async function refreshToken(req: Request, res: Response) {
   const decoded = verifyRefreshToken(token);
   const tokenKey = refreshTokenKey(NAMESPACE, decoded.sub, decoded.jti);
 
-  if (!(await redis.exists(tokenKey))) {
-    await deleteAllRefreshTokensForUser(NAMESPACE, decoded.sub);
+  const check = await checkRefreshToken(NAMESPACE, decoded, async (id) =>
+    Boolean(await prisma.user.findUnique({ where: { id }, select: { id: true } }))
+  );
+  if (check === 'foreign') {
+    // Another app's refresh token (see checkRefreshToken). Its cookies are not ours to
+    // clear, and there is nothing of ours to revoke.
+    throw new AuthError(INVALID_REFRESH_TOKEN_MESSAGE);
+  }
+  if (check === 'reused') {
     clearAuthCookies(res);
     console.error('[auth-service] Refresh token reuse detected', {
       userId: decoded.sub,

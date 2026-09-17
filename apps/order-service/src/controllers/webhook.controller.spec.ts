@@ -202,6 +202,15 @@ jest.mock('../utils/cart.store.js', () => ({
   },
 }));
 
+const emitted: Record<string, unknown>[] = [];
+jest.mock('../utils/events.js', () => ({
+  emitOrderCreated: (payload: Record<string, unknown>) => {
+    emitted.push(payload);
+    events.push(`emit:${payload.shopId}`);
+    return Promise.resolve();
+  },
+}));
+
 let verified: unknown;
 jest.mock('@openshelf/stripe', () => ({
   verifyWebhookEvent: () => verified,
@@ -255,6 +264,7 @@ beforeEach(() => {
   transferCalls.length = 0;
   cartRemovals.length = 0;
   events.length = 0;
+  emitted.length = 0;
   transferImpl = ({ orderId }) => Promise.resolve({ id: `tr_${orderId}` });
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -525,4 +535,61 @@ it('acknowledges event types it does not handle', async () => {
   const res = await deliver('charge.refunded', { id: 'ch_1' });
   expect(res.statusCode).toBe(200);
   expect(db.orders).toHaveLength(0);
+});
+
+describe('order.created events', () => {
+  it('emits one per shop order, with identifiers and the per-shop subtotal', async () => {
+    await succeeded();
+
+    const a = db.orders.find((o) => o.shopId === SHOP_A);
+    const b = db.orders.find((o) => o.shopId === SHOP_B);
+    expect(emitted).toEqual([
+      {
+        orderId: a?.id,
+        shopId: SHOP_A,
+        userId: USER,
+        status: 'PAID',
+        subtotal: 3495,
+        currency: 'usd',
+      },
+      {
+        orderId: b?.id,
+        shopId: SHOP_B,
+        userId: USER,
+        status: 'PAID',
+        subtotal: 2955,
+        currency: 'usd',
+      },
+    ]);
+  });
+
+  // The transaction resolves before the cart prune, which runs before any emit.
+  it('emits only after the orders are committed', async () => {
+    await succeeded();
+    const lastWrite = Math.max(
+      events.indexOf(`order.create:${SHOP_A}`),
+      events.indexOf(`order.create:${SHOP_B}`)
+    );
+    const firstEmit = events.findIndex((e) => e.startsWith('emit:'));
+    expect(events.indexOf('cart.remove')).toBeGreaterThan(lastWrite);
+    expect(firstEmit).toBeGreaterThan(events.indexOf('cart.remove'));
+  });
+
+  it('emits nothing on a replayed delivery', async () => {
+    await succeeded();
+    emitted.length = 0;
+    await succeeded();
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('emits nothing when writing the orders fails', async () => {
+    failOrderCreateForShop = SHOP_B;
+    await expect(succeeded()).rejects.toThrow('simulated write failure');
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('emits nothing for a declined payment', async () => {
+    await deliver('payment_intent.payment_failed', { id: PI });
+    expect(emitted).toHaveLength(0);
+  });
 });

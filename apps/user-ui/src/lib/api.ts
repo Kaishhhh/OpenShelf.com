@@ -3,12 +3,15 @@ import type {
   CartResponse,
   CheckoutResponse,
   LoginInput,
+  NotificationItem,
+  NotificationPage,
   OrderPage,
   RegisterInput,
   ResendOtpInput,
   VerifyOtpInput,
 } from '@openshelf/types';
 import { catalogueQuery } from './catalogue-filters';
+import { refreshSession } from './session';
 import type {
   CatalogueFilters,
   CataloguePage,
@@ -49,6 +52,9 @@ const SHOP_BASE_URL =
 const ORDER_BASE_URL =
   process.env.NEXT_PUBLIC_ORDER_API_URL ?? 'http://localhost:8080/order';
 
+const NOTIFICATION_BASE_URL =
+  process.env.NEXT_PUBLIC_NOTIFICATION_API_URL ?? 'http://localhost:8080/notification';
+
 export class ApiError extends Error {
   status: number;
   details?: unknown;
@@ -85,16 +91,29 @@ async function send<T>(
   // Catalogue reads are anonymous; only the auth calls need the cookie.
   withCredentials = true
 ): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    method,
-    ...(withCredentials ? { credentials: 'include' as const } : {}),
-    ...(body === undefined
-      ? {}
-      : {
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }),
-  });
+  const attempt = () =>
+    fetch(`${base}${path}`, {
+      method,
+      ...(withCredentials ? { credentials: 'include' as const } : {}),
+      ...(body === undefined
+        ? {}
+        : {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+    });
+
+  const startedAt = Date.now();
+  let res = await attempt();
+
+  // An expired access token: refresh once and retry once. Auth endpoints themselves are
+  // excluded — a 401 from /login is wrong credentials, and refreshing on a failed
+  // /refresh-token would loop.
+  if (res.status === 401 && withCredentials && base !== API_BASE_URL) {
+    if (await refreshSession(startedAt)) {
+      res = await attempt();
+    }
+  }
 
   return toResult<T>(res);
 }
@@ -216,4 +235,40 @@ export function listOrders(
 /** 404s for an order that is not the caller's. */
 export function getOrder(id: string) {
   return cartRequest<BuyerOrder>('GET', `/orders/${encodeURIComponent(id)}`);
+}
+
+/** Ends the session. Always resolves: a failed logout still leaves the client logged out. */
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE_URL}/logout`, { method: 'POST', credentials: 'include' }).catch(
+    () => undefined
+  );
+}
+
+// --- notifications --------------------------------------------------------
+
+const notificationRequest = <T>(method: string, path: string, body?: unknown) =>
+  send<T>(method, NOTIFICATION_BASE_URL, path, body);
+
+/** The most recent notifications, with the unread count across all of them. */
+export function listNotifications(limit = 10) {
+  return notificationRequest<NotificationPage>('GET', `/notifications?limit=${limit}`);
+}
+
+export function markNotificationRead(id: string) {
+  return notificationRequest<NotificationItem>(
+    'PATCH',
+    `/notifications/${encodeURIComponent(id)}/read`
+  );
+}
+
+export function markAllNotificationsRead() {
+  return notificationRequest<{ updated: number }>('POST', '/notifications/read-all');
+}
+
+export function registerPushToken(token: string) {
+  return notificationRequest<void>('POST', '/fcm-tokens', { token });
+}
+
+export function removePushToken(token: string) {
+  return notificationRequest<void>('DELETE', '/fcm-tokens', { token });
 }

@@ -10,6 +10,7 @@ import { Button, FormField, Input } from '@openshelf/ui';
 import { ApiError, loginUser } from '@/lib/api';
 import { safeReturnTo } from '@/lib/return-to';
 import { CART_KEY } from '@/lib/use-cart';
+import { NOTIFICATIONS_KEY } from '@/lib/realtime';
 
 function LoginForm() {
   const router = useRouter();
@@ -38,6 +39,8 @@ function LoginForm() {
       // The cart was fetched as anonymous before this point, and that 401 is cached.
       // Without this the header badge stays empty until something else invalidates it.
       queryClient.invalidateQueries({ queryKey: CART_KEY });
+      // Same for notifications — and their data is what connects the socket.
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
       router.push(returnTo);
     },
   });

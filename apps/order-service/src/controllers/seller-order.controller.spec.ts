@@ -164,6 +164,14 @@ jest.mock('@openshelf/prisma', () => ({
   },
 }));
 
+const emitted: Record<string, unknown>[] = [];
+jest.mock('../utils/events.js', () => ({
+  emitOrderStatusChanged: (payload: Record<string, unknown>) => {
+    emitted.push(payload);
+    return Promise.resolve();
+  },
+}));
+
 import {
   getShopOrder,
   listShopOrders,
@@ -213,6 +221,7 @@ function expectNoLeaks(body: unknown) {
 }
 
 beforeEach(() => {
+  emitted.length = 0;
   updateCalls.length = 0;
   findManyCalls.length = 0;
   table = [
@@ -440,5 +449,41 @@ describe('updateOrderStatus', () => {
       )
     ).rejects.toBeInstanceOf(ValidationError); // strict body: the extra key is refused
     expect(table.find((r) => r.id === ORDER_B)?.status).toBe('PAID');
+  });
+});
+
+describe('order.status-changed events', () => {
+  const patch = (id: string, status: string, shopId = SHOP_A) =>
+    updateOrderStatus(
+      req(shopId, { params: { id }, body: { status } }),
+      asRes(mockRes())
+    );
+
+  it('emits on a successful transition, with the buyer id the response never shows', async () => {
+    await patch(ORDER_A, 'SHIPPED');
+    expect(emitted).toEqual([
+      {
+        orderId: ORDER_A,
+        shopId: SHOP_A,
+        userId: 'buyer00000000000000000001',
+        status: 'SHIPPED',
+      },
+    ]);
+  });
+
+  it('emits nothing for an illegal transition', async () => {
+    await expect(patch(ORDER_A, 'DELIVERED')).rejects.toBeInstanceOf(ValidationError);
+    expect(emitted).toHaveLength(0);
+  });
+
+  it("emits nothing for another shop's order", async () => {
+    await expect(patch(ORDER_B, 'SHIPPED')).rejects.toBeInstanceOf(NotFoundError);
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('emits once per step through the machine', async () => {
+    await patch(ORDER_A, 'SHIPPED');
+    await patch(ORDER_A, 'DELIVERED');
+    expect(emitted.map((e) => e.status)).toEqual(['SHIPPED', 'DELIVERED']);
   });
 });
