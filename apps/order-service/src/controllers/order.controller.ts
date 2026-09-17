@@ -7,10 +7,19 @@ import {
   type OrderPage,
 } from '@openshelf/types';
 import { parseOrThrow, requireUserId } from '../utils/cart.helper.js';
+import {
+  OBJECT_ID_PATTERN,
+  ORDER_ITEM_SELECT,
+  ORDER_NOT_FOUND_MESSAGE,
+  ORDER_TIMESTAMPS_SELECT,
+  imagesFor,
+  toIsoTimestamps,
+  withImages,
+  type SelectedItem,
+  type SelectedTimestamps,
+} from '../utils/order.projection.js';
 
-export const ORDER_NOT_FOUND_MESSAGE = 'Order not found';
-
-const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
+export { ORDER_NOT_FOUND_MESSAGE };
 
 /**
  * What a buyer may see of their order. Projected explicitly: platformFee, sellerAmount,
@@ -22,39 +31,40 @@ const BUYER_ORDER_SELECT = {
   status: true,
   subtotal: true,
   stockShortfall: true,
-  createdAt: true,
+  ...ORDER_TIMESTAMPS_SELECT,
   shop: { select: { id: true, name: true } },
   payment: { select: { stripePaymentIntentId: true, currency: true } },
-  items: {
-    select: {
-      id: true,
-      productId: true,
-      title: true,
-      price: true,
-      quantity: true,
-      lineTotal: true,
-      stockShortfall: true,
-    },
-  },
+  items: { select: ORDER_ITEM_SELECT },
 } as const;
 
-type SelectedOrder = {
+type SelectedOrder = SelectedTimestamps & {
   id: string;
   status: BuyerOrder['status'];
   subtotal: number;
   stockShortfall: boolean;
-  createdAt: Date;
   shop: { id: string; name: string };
   payment: { stripePaymentIntentId: string; currency: string };
-  items: BuyerOrder['items'];
+  items: SelectedItem[];
 };
 
-function toBuyerOrder({ payment, createdAt, ...order }: SelectedOrder): BuyerOrder {
+function toBuyerOrder(
+  {
+    payment,
+    items,
+    createdAt,
+    shippedAt,
+    deliveredAt,
+    cancelledAt,
+    ...order
+  }: SelectedOrder,
+  images: Map<string, string>
+): BuyerOrder {
   return {
     ...order,
-    createdAt: createdAt.toISOString(),
+    ...toIsoTimestamps({ createdAt, shippedAt, deliveredAt, cancelledAt }),
     paymentIntentId: payment.stripePaymentIntentId,
     currency: payment.currency,
+    items: withImages(items, images),
   };
 }
 
@@ -90,8 +100,10 @@ export async function listOrders(req: Request, res: Response) {
     prisma.order.count({ where }),
   ]);
 
+  const images = await imagesFor(orders.flatMap((order) => order.items));
+
   return res.status(200).json({
-    orders: orders.map(toBuyerOrder),
+    orders: orders.map((order) => toBuyerOrder(order, images)),
     page,
     limit,
     total,
@@ -120,5 +132,5 @@ export async function getOrder(req: Request, res: Response) {
     throw new NotFoundError(ORDER_NOT_FOUND_MESSAGE);
   }
 
-  return res.status(200).json(toBuyerOrder(order));
+  return res.status(200).json(toBuyerOrder(order, await imagesFor(order.items)));
 }

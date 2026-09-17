@@ -1,5 +1,9 @@
 import type {
   LoginInput,
+  OrderStatus,
+  OrderStatusUpdateResponse,
+  SellerOrder,
+  SellerOrderPage,
   ProductCreateInput,
   ProductUpdateInput,
   ResendOtpInput,
@@ -21,6 +25,10 @@ const API_BASE_URL =
 // existing .env and would break silently if its meaning changed.
 const PRODUCT_BASE_URL =
   process.env.NEXT_PUBLIC_PRODUCT_API_URL ?? 'http://localhost:8080/product';
+
+// order-service, for the shop's orders. Same reasoning as PRODUCT_BASE_URL.
+const ORDER_BASE_URL =
+  process.env.NEXT_PUBLIC_ORDER_API_URL ?? 'http://localhost:8080/order';
 
 export class ApiError extends Error {
   status: number;
@@ -259,4 +267,38 @@ export function addProductImage(
 
 export function deleteProductImage(productId: string, imageId: string) {
   return productDelete<{ id: string }>(`/${productId}/images/${imageId}`);
+}
+
+// --- orders ---------------------------------------------------------------
+
+export type { OrderStatus, SellerOrder, SellerOrderPage };
+
+/**
+ * This shop's orders. The shop is the logged-in seller's — there is deliberately no shop
+ * parameter to pass. Every amount in the response is integer cents.
+ */
+export function listShopOrders(
+  params: { page?: number; limit?: number; status?: OrderStatus } = {}
+) {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  if (params.status) query.set('status', params.status);
+  const qs = query.toString();
+  return send<SellerOrderPage>('GET', ORDER_BASE_URL, `/seller/orders${qs ? `?${qs}` : ''}`);
+}
+
+/** 404s for an order that belongs to another shop. */
+export function getShopOrder(id: string) {
+  return send<SellerOrder>('GET', ORDER_BASE_URL, `/seller/orders/${encodeURIComponent(id)}`);
+}
+
+/** 400s, naming both statuses, for any transition the state machine does not allow. */
+export function updateOrderStatus(id: string, status: OrderStatus) {
+  return send<OrderStatusUpdateResponse>(
+    'PATCH',
+    ORDER_BASE_URL,
+    `/seller/orders/${encodeURIComponent(id)}/status`,
+    { status }
+  );
 }

@@ -17,6 +17,9 @@ interface Row {
   transferStatus: string;
   stockShortfall: boolean;
   createdAt: Date;
+  shippedAt: Date | null;
+  deliveredAt: Date | null;
+  cancelledAt: Date | null;
   shop: { id: string; name: string };
   payment: { stripePaymentIntentId: string; currency: string };
   items: unknown[];
@@ -33,9 +36,22 @@ const row = (over: Partial<Row>): Row => ({
   transferStatus: 'SUCCEEDED',
   stockShortfall: false,
   createdAt: new Date('2026-09-16T00:00:00Z'),
+  shippedAt: new Date('2026-09-17T00:00:00Z'),
+  deliveredAt: null,
+  cancelledAt: null,
   shop: { id: 'shopA', name: 'Shop A' },
   payment: { stripePaymentIntentId: 'pi_alice', currency: 'usd' },
-  items: [],
+  items: [
+    {
+      id: 'item-1',
+      productId: '111111111111111111111111',
+      title: 'Mug',
+      price: 1250,
+      quantity: 2,
+      lineTotal: 2500,
+      stockShortfall: false,
+    },
+  ],
   ...over,
 });
 
@@ -76,6 +92,10 @@ jest.mock('@openshelf/prisma', () => ({
         const found = table.find((r) => matches(r, where));
         return Promise.resolve(found ? project(found, select) : null);
       },
+    },
+    image: {
+      findMany: () =>
+        Promise.resolve([{ productId: '111111111111111111111111', url: 'https://ik.imagekit.io/x/mug.jpg' }]),
     },
   },
 }));
@@ -122,7 +142,13 @@ describe('getOrder', () => {
       paymentIntentId: 'pi_alice',
       currency: 'usd',
       createdAt: '2026-09-16T00:00:00.000Z',
+      shippedAt: '2026-09-17T00:00:00.000Z',
+      deliveredAt: null,
+      cancelledAt: null,
     });
+    expect((res.body.items as { image: string | null }[])[0].image).toBe(
+      'https://ik.imagekit.io/x/mug.jpg'
+    );
   });
 
   it("404s another buyer's order, exactly like a missing one", async () => {

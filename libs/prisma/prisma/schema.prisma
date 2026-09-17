@@ -238,6 +238,12 @@ model Order {
   // Set when any item could not be decremented at payment confirmation: the
   // buyer paid for stock that was no longer there. Needs a human.
   stockShortfall   Boolean        @default(false)
+  // Written once each, by the seller's status transition. There is no paidAt:
+  // an order is only created at payment confirmation, so createdAt is the
+  // payment date.
+  shippedAt        DateTime?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -255,6 +261,8 @@ model Order {
   // The buyer's history, newest first.
   @@index([userId, createdAt])
   @@index([shopId])
+  // The seller's list: shortfall orders first, newest first within each.
+  @@index([shopId, stockShortfall, createdAt])
   @@index([paymentId])
 }
 

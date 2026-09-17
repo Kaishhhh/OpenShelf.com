@@ -5,6 +5,7 @@ import * as path from 'path';
 import { errorMiddleware } from '@openshelf/errors';
 import { cartRouter } from './routes/cart.router.js';
 import { orderRouter } from './routes/order.router.js';
+import { sellerOrderRouter } from './routes/seller-order.router.js';
 import { handlePaymentsWebhook } from './controllers/webhook.controller.js';
 
 const app = express();
@@ -30,6 +31,7 @@ app.get('/api', (req, res) => {
 // Ahead of cartRouter for the same reason as the webhook: its router-level
 // isAuthenticated would otherwise run first. These routes authenticate themselves.
 app.use('/api', orderRouter);
+app.use('/api', sellerOrderRouter);
 app.use('/api', cartRouter);
 
 app.use(errorMiddleware);

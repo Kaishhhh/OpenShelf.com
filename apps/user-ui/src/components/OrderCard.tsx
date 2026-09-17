@@ -1,13 +1,16 @@
 import type { BuyerOrder } from '@openshelf/types';
 import { formatCents } from './Price';
 
-const STATUS_LABELS: Record<BuyerOrder['status'], string> = {
+export const STATUS_LABELS: Record<BuyerOrder['status'], string> = {
   PENDING: 'Pending',
   PAID: 'Paid',
   SHIPPED: 'Shipped',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',
 };
+
+/** Copy for an order with a stock shortfall, shared by the card and the detail page. */
+export const SHORTFALL_NOTE = 'One or more items may be delayed.';
 
 /** One shop's order. Every amount on it is integer cents. */
 export function OrderCard({ order }: { order: BuyerOrder }) {
@@ -39,14 +42,17 @@ export function OrderCard({ order }: { order: BuyerOrder }) {
       {/* The buyer has paid for something the seller may not have. Resolving it belongs
           to the fulfilment and refund slices; this only keeps it from being a surprise. */}
       {order.stockShortfall && (
-        <p className="text-xs text-ink-muted">
-          One or more items may be delayed — the shop is checking stock.
-        </p>
+        <p className="text-xs text-ink-muted">{SHORTFALL_NOTE}</p>
       )}
 
-      <div className="flex justify-between border-t border-line pt-2 text-sm">
-        <span className="text-ink-muted">Subtotal</span>
-        <span className="text-ink">{formatCents(order.subtotal)}</span>
+      <div className="flex items-baseline justify-between border-t border-line pt-2 text-sm">
+        <a href={`/orders/${order.id}`} className="text-xs text-accent">
+          View order
+        </a>
+        <span className="text-ink">
+          <span className="text-ink-muted">Subtotal </span>
+          {formatCents(order.subtotal)}
+        </span>
       </div>
     </section>
   );

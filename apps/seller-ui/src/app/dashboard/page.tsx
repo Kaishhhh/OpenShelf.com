@@ -3,7 +3,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
-import { ApiError, getShop, type Shop } from '@/lib/api';
+import {
+  ApiError,
+  getShop,
+  listShopOrders,
+  type SellerOrderPage,
+  type Shop,
+} from '@/lib/api';
 import { PayoutsPanel } from './PayoutsPanel';
 
 function Panel({
@@ -85,12 +91,44 @@ function ShopPanel({ data, error }: { data?: Shop; error: ApiError | null }) {
       <p className="text-sm text-ink-muted">
         Your shop is approved and visible to buyers.
       </p>
-      <p className="text-sm">
+      <PendingOrders />
+      <p className="flex gap-4 text-sm">
         <a href="/products" className="text-accent">
           Manage products
         </a>
+        <a href="/orders" className="text-accent">
+          View orders
+        </a>
       </p>
     </Panel>
+  );
+}
+
+/**
+ * Orders paid for and not yet shipped. Only rendered for an approved shop — the endpoint
+ * 403s any other — and reads `total` from a one-row page rather than a count endpoint of
+ * its own.
+ */
+function PendingOrders() {
+  const { data, isPending, error } = useQuery<SellerOrderPage, ApiError>({
+    queryKey: ['shop-orders', 'PAID', 'count'],
+    queryFn: () => listShopOrders({ status: 'PAID', limit: 1 }),
+  });
+
+  if (isPending || error) {
+    return null;
+  }
+
+  return (
+    <p className="text-sm text-ink">
+      {data.total === 0 ? (
+        <span className="text-ink-muted">No orders awaiting shipment.</span>
+      ) : (
+        <a href="/orders?status=PAID" className="text-accent">
+          {data.total} {data.total === 1 ? 'order' : 'orders'} awaiting shipment
+        </a>
+      )}
+    </p>
   );
 }
 
