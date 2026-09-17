@@ -25,6 +25,29 @@ enum ShopStatus {
   REJECTED
 }
 
+// A Payment is SUCCEEDED once and only once — the webhook's claim on that
+// transition is what makes a replayed delivery a no-op. FAILED is not final:
+// the buyer can retry another card against the same PaymentIntent.
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum TransferStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
 model User {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   name          String
@@ -39,6 +62,8 @@ model User {
   updatedAt     DateTime @updatedAt
 
   reviews       Review[]
+  payments      Payment[]
+  orders        Order[]
 
 }
 
@@ -100,6 +125,7 @@ model Shop {
 
   products     Product[]
   reviews      Review[]
+  orders       Order[]
 }
 
 model Product {
@@ -160,4 +186,92 @@ model Review {
 
   @@index([productId])
   @@index([shopId])
+}
+
+// ---------------------------------------------------------------------------
+// Checkout. Every money field below is an Int in minor units (cents), matching
+// Stripe. Product.price is a float in dollars and is converted exactly once, at
+// checkout, so the splits here always sum without float drift.
+// ---------------------------------------------------------------------------
+
+// One line of the cart as it was priced when checkout started.
+//
+// The webhook builds orders from this, never from the live cart: the buyer can
+// change the cart while paying, and the orders must match what was charged.
+type PaymentLine {
+  productId String @db.ObjectId
+  shopId    String @db.ObjectId
+  title     String
+  price     Int
+  quantity  Int
+}
+
+model Payment {
+  id                    String        @id @default(auto()) @map("_id") @db.ObjectId
+  stripePaymentIntentId String        @unique
+  amount                Int
+  currency              String
+  status                PaymentStatus @default(PENDING)
+  lines                 PaymentLine[]
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  userId                String        @db.ObjectId
+  user                  User          @relation(fields: [userId], references: [id])
+
+  orders                Order[]
+
+  @@index([userId])
+}
+
+// One per shop per Payment. The unit a seller fulfils and gets paid for.
+model Order {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  status           OrderStatus    @default(PENDING)
+  subtotal         Int
+  // platformFee + sellerAmount == subtotal, always — sellerAmount is derived
+  // by subtraction, never rounded separately.
+  platformFee      Int
+  sellerAmount     Int
+  stripeTransferId String?
+  transferStatus   TransferStatus @default(PENDING)
+  // Set when any item could not be decremented at payment confirmation: the
+  // buyer paid for stock that was no longer there. Needs a human.
+  stockShortfall   Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  paymentId        String         @db.ObjectId
+  payment          Payment        @relation(fields: [paymentId], references: [id])
+
+  shopId           String         @db.ObjectId
+  shop             Shop           @relation(fields: [shopId], references: [id])
+
+  userId           String         @db.ObjectId
+  user             User           @relation(fields: [userId], references: [id])
+
+  items            OrderItem[]
+
+  // The buyer's history, newest first.
+  @@index([userId, createdAt])
+  @@index([shopId])
+  @@index([paymentId])
+}
+
+// Denormalised on purpose. An order is a historical record: a seller editing or
+// deleting the product must not change it, so productId is a plain id with no
+// relation and title/price are copied in.
+model OrderItem {
+  id             String  @id @default(auto()) @map("_id") @db.ObjectId
+  productId      String  @db.ObjectId
+  title          String
+  price          Int
+  quantity       Int
+  lineTotal      Int
+  stockShortfall Boolean @default(false)
+
+  orderId        String  @db.ObjectId
+  order          Order   @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
 }

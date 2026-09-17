@@ -206,12 +206,12 @@ export default function CartPage() {
             </div>
 
             <div className="flex gap-2">
-              {/* Checkout is the next slice — disabled rather than absent so the
-                  page reads complete, and so it cannot imply a capability that
-                  does not exist yet. */}
-              <Button type="button" disabled title="Coming soon">
+              <a
+                href="/checkout"
+                className="inline-flex items-center justify-center rounded-card bg-accent px-3 py-1.5 text-sm font-medium text-surface hover:bg-accent-hover"
+              >
                 Checkout
-              </Button>
+              </a>
               <Button
                 type="button"
                 variant="secondary"

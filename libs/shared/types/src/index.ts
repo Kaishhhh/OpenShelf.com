@@ -5,3 +5,4 @@ export * from './lib/auth.schemas';
 export * from './lib/shop.schemas';
 export * from './lib/product.schemas';
 export * from './lib/cart.schemas';
+export * from './lib/order.schemas';

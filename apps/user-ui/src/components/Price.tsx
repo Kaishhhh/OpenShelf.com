@@ -3,6 +3,14 @@ export function formatMoney(value: number): string {
 }
 
 /**
+ * For checkout and order amounts, which are integer cents. The cart and catalogue still
+ * carry float dollars — use formatMoney for those.
+ */
+export function formatCents(cents: number): string {
+  return formatMoney(cents / 100);
+}
+
+/**
  * A price, with the original struck through when the product is on sale.
  *
  * Note the catalogue sorts and filters on `price`, not on the discounted figure

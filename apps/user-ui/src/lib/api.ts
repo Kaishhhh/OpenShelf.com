@@ -1,6 +1,9 @@
 import type {
+  BuyerOrder,
   CartResponse,
+  CheckoutResponse,
   LoginInput,
+  OrderPage,
   RegisterInput,
   ResendOtpInput,
   VerifyOtpInput,
@@ -184,4 +187,33 @@ export function removeCartItem(productId: string) {
 
 export function clearCart() {
   return cartRequest<CartResponse>('DELETE', '/cart');
+}
+
+// --- checkout and orders --------------------------------------------------
+
+/**
+ * Starts paying for the cart. No body: the server recomputes the total from the cart it
+ * holds, so there is nothing a client could usefully send.
+ *
+ * 400s with the cart's notices as `details` when the cart changed since it was last read.
+ */
+export function startCheckout() {
+  return cartRequest<CheckoutResponse>('POST', '/checkout');
+}
+
+/** Money in the response is integer cents. */
+export function listOrders(
+  params: { page?: number; limit?: number; paymentIntentId?: string } = {}
+) {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  if (params.paymentIntentId) query.set('paymentIntentId', params.paymentIntentId);
+  const qs = query.toString();
+  return cartRequest<OrderPage>('GET', `/orders${qs ? `?${qs}` : ''}`);
+}
+
+/** 404s for an order that is not the caller's. */
+export function getOrder(id: string) {
+  return cartRequest<BuyerOrder>('GET', `/orders/${encodeURIComponent(id)}`);
 }

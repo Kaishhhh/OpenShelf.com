@@ -274,3 +274,105 @@ function isSignatureError(err: unknown): boolean {
     'StripeSignatureVerificationError'
   );
 }
+
+// ---------------------------------------------------------------------------
+// Payments. OpenShelf is merchant of record: the buyer is charged once on the
+// platform account, and each seller's share moves afterwards as a transfer.
+// ---------------------------------------------------------------------------
+
+/** A v1 snapshot event (`payment_intent.*`), as delivered to order-service. */
+export type StripeEvent = Stripe.Event;
+export type StripePaymentIntent = Stripe.PaymentIntent;
+
+export interface PaymentIntentInput {
+  /** Minor units. */
+  amount: number;
+  currency: string;
+  userId: string;
+}
+
+/**
+ * A PaymentIntent for the whole cart, charged on the platform account.
+ *
+ * No `transfer_data` and no `on_behalf_of`: separate charges and transfers. The
+ * seller split happens later, per order, once payment is confirmed. userId goes
+ * into metadata so a charge in the dashboard traces back to its buyer.
+ */
+export function createPaymentIntent(
+  input: PaymentIntentInput
+): Promise<StripePaymentIntent> {
+  return stripe().paymentIntents.create({
+    amount: input.amount,
+    currency: input.currency,
+    automatic_payment_methods: { enabled: true },
+    metadata: { userId: input.userId },
+  });
+}
+
+export interface TransferInput {
+  /** Minor units. */
+  amount: number;
+  currency: string;
+  /** The seller's connected account id. */
+  destination: string;
+  /** The charge the funds came from. */
+  sourceTransaction: string;
+  /** Groups every transfer made from one PaymentIntent. */
+  transferGroup: string;
+  orderId: string;
+}
+
+/**
+ * Moves one order's seller share to the seller's connected account.
+ *
+ * The idempotency key is derived from the order, so a retried webhook that reaches this again for
+ * the same order gets the original transfer back rather than paying the seller twice.
+ *
+ * source_transaction ties the transfer to the charge's funds. Without it the transfer draws on the
+ * platform's *available* balance, which a charge made seconds ago has not reached yet — every
+ * transfer would fail with insufficient funds.
+ */
+export function createTransfer(input: TransferInput): Promise<Stripe.Transfer> {
+  return stripe().transfers.create(
+    {
+      amount: input.amount,
+      currency: input.currency,
+      destination: input.destination,
+      source_transaction: input.sourceTransaction,
+      transfer_group: input.transferGroup,
+      metadata: { orderId: input.orderId },
+    },
+    { idempotencyKey: `order-transfer:${input.orderId}` }
+  );
+}
+
+/**
+ * Verifies and parses a v1 snapshot event for the payments endpoint, or returns null when the
+ * signature does not check out.
+ *
+ * A different secret from verifyEventNotification's: payment events come from their own event
+ * destination (snapshot payloads), not the thin v2 destination seller-service listens on, and each
+ * destination signs with its own secret. Same contract otherwise — rawBody must be the exact bytes,
+ * and a missing secret throws rather than reading like a forged request.
+ *
+ * Static, so no secret key is needed just to check a signature.
+ */
+export function verifyWebhookEvent(
+  rawBody: Buffer,
+  signature: string | string[] | undefined
+): StripeEvent | null {
+  const secret = requireEnv('STRIPE_PAYMENTS_WEBHOOK_SECRET');
+
+  if (typeof signature !== 'string' || signature === '') {
+    return null;
+  }
+
+  try {
+    return Stripe.webhooks.constructEvent(rawBody, signature, secret);
+  } catch (err) {
+    if (isSignatureError(err)) {
+      return null;
+    }
+    throw err;
+  }
+}

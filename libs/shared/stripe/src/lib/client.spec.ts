@@ -1,7 +1,10 @@
 const SECRET_KEY = 'sk_test_do_not_leak';
 const WEBHOOK_SECRET = 'whsec_test_openshelf';
+const PAYMENTS_WEBHOOK_SECRET = 'whsec_test_openshelf_payments';
 
 interface FakeClient {
+  paymentIntents: { create: jest.Mock };
+  transfers: { create: jest.Mock };
   v2: {
     core: {
       accounts: { create: jest.Mock; retrieve: jest.Mock };
@@ -24,6 +27,8 @@ function real() {
 // memoises the client it builds, so swapping the object itself would leave the
 // memoised one in place after the first test.
 const fake: FakeClient = {
+  paymentIntents: { create: jest.fn() },
+  transfers: { create: jest.fn() },
   v2: {
     core: {
       accounts: { create: jest.fn(), retrieve: jest.fn() },
@@ -50,11 +55,14 @@ jest.mock('stripe', () => {
 import Stripe from 'stripe';
 import {
   createOnboardingLink,
+  createPaymentIntent,
   createRecipientAccount,
+  createTransfer,
   retrieveAccount,
   stripe,
   toPayoutStatus,
   verifyEventNotification,
+  verifyWebhookEvent,
   type StripeAccount,
 } from './client.js';
 
@@ -63,12 +71,15 @@ const { accounts, accountLinks } = fake.v2.core;
 beforeAll(() => {
   process.env.STRIPE_SECRET_KEY = SECRET_KEY;
   process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET = PAYMENTS_WEBHOOK_SECRET;
 });
 
 beforeEach(() => {
   accounts.create.mockReset();
   accounts.retrieve.mockReset();
   accountLinks.create.mockReset();
+  fake.paymentIntents.create.mockReset();
+  fake.transfers.create.mockReset();
 });
 
 describe('stripe()', () => {
@@ -446,6 +457,120 @@ describe('verifyEventNotification', () => {
       ).toThrow('STRIPE_WEBHOOK_SECRET is not set');
     } finally {
       process.env.STRIPE_WEBHOOK_SECRET = saved;
+    }
+  });
+});
+
+describe('createPaymentIntent', () => {
+  // Separate charges and transfers: nothing on the intent routes funds to a seller.
+  it('charges the platform with no destination, tagged with the buyer', async () => {
+    fake.paymentIntents.create.mockResolvedValue({ id: 'pi_1' });
+
+    await createPaymentIntent({ amount: 2450, currency: 'usd', userId: 'user_1' });
+
+    expect(fake.paymentIntents.create).toHaveBeenCalledWith({
+      amount: 2450,
+      currency: 'usd',
+      automatic_payment_methods: { enabled: true },
+      metadata: { userId: 'user_1' },
+    });
+  });
+});
+
+describe('createTransfer', () => {
+  const input = {
+    amount: 900,
+    currency: 'usd',
+    destination: 'acct_1',
+    sourceTransaction: 'ch_1',
+    transferGroup: 'pi_1',
+    orderId: 'order_1',
+  };
+
+  it('transfers from the charge to the seller, keyed on the order', async () => {
+    fake.transfers.create.mockResolvedValue({ id: 'tr_1' });
+
+    await createTransfer(input);
+
+    expect(fake.transfers.create).toHaveBeenCalledWith(
+      {
+        amount: 900,
+        currency: 'usd',
+        destination: 'acct_1',
+        source_transaction: 'ch_1',
+        transfer_group: 'pi_1',
+        metadata: { orderId: 'order_1' },
+      },
+      { idempotencyKey: 'order-transfer:order_1' }
+    );
+  });
+
+  // What stops a retried webhook paying a seller twice.
+  it('sends the same key for the same order and a different one for another', async () => {
+    fake.transfers.create.mockResolvedValue({ id: 'tr_1' });
+
+    await createTransfer(input);
+    await createTransfer(input);
+    await createTransfer({ ...input, orderId: 'order_2' });
+
+    const keys = fake.transfers.create.mock.calls.map(
+      (call) => call[1].idempotencyKey
+    );
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+});
+
+describe('verifyWebhookEvent', () => {
+  const payload = JSON.stringify({
+    id: 'evt_pi_1',
+    object: 'event',
+    type: 'payment_intent.succeeded',
+    data: { object: { id: 'pi_1', object: 'payment_intent' } },
+  });
+
+  const sign = (body: string, secret = PAYMENTS_WEBHOOK_SECRET) =>
+    Stripe.webhooks.generateTestHeaderString({ payload: body, secret });
+
+  it('returns the event for a correctly signed body', () => {
+    expect(
+      verifyWebhookEvent(Buffer.from(payload), sign(payload))
+    ).toMatchObject({ id: 'evt_pi_1', type: 'payment_intent.succeeded' });
+  });
+
+  // The account-events destination's secret must not authenticate payment events.
+  it('returns null when signed with the account-events secret', () => {
+    expect(
+      verifyWebhookEvent(Buffer.from(payload), sign(payload, WEBHOOK_SECRET))
+    ).toBeNull();
+  });
+
+  it('returns null for a body that was parsed and re-serialised', () => {
+    const reserialised = JSON.stringify(JSON.parse(payload), null, 2);
+    expect(
+      verifyWebhookEvent(Buffer.from(reserialised), sign(payload))
+    ).toBeNull();
+  });
+
+  it('returns null for a tampered body', () => {
+    const tampered = payload.replace('pi_1', 'pi_2');
+    expect(verifyWebhookEvent(Buffer.from(tampered), sign(payload))).toBeNull();
+  });
+
+  it('returns null without a signature', () => {
+    expect(verifyWebhookEvent(Buffer.from(payload), undefined)).toBeNull();
+    expect(verifyWebhookEvent(Buffer.from(payload), '')).toBeNull();
+  });
+
+  it('throws when the secret is not configured', () => {
+    const saved = process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET;
+    delete process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET;
+    try {
+      expect(() =>
+        verifyWebhookEvent(Buffer.from(payload), sign(payload))
+      ).toThrow('STRIPE_PAYMENTS_WEBHOOK_SECRET');
+    } finally {
+      process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET = saved;
     }
   });
 });

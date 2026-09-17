@@ -28,6 +28,9 @@ export default function RootLayout({
               </nav>
               <div className="ml-auto flex items-center gap-3 text-sm text-ink-muted">
                 <CartIndicator />
+                <a href="/orders" className="hover:text-ink">
+                  Orders
+                </a>
                 <a href="/login" className="hover:text-ink">
                   Log in
                 </a>
